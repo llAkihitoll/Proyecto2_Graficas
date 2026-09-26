@@ -1,5 +1,5 @@
-// genera las texturas (assets/textures/*.png) y las 6 caras del skybox
-// (assets/skybox/*.png) de forma procedural y las guarda como imagenes.
+// genera las texturas (assets/textures/*.png) y las 6 caras de cada skybox
+// (assets/skybox/<momento>/*.png) de forma procedural y las guarda como imagenes.
 // el diorama despues las CARGA desde archivo como cualquier textura, asi
 // que se pueden reemplazar por imagenes propias sin tocar el codigo.
 //
@@ -8,7 +8,8 @@
 
 use crate::matematica::{suavizar, v3, Vec3};
 use crate::ruido::{fbm, hash, hash2, valor2, voronoi};
-use crate::skybox::{self, CARAS, CARPETA_SKYBOX};
+use crate::ambiente::{self, Estacion};
+use crate::skybox::{self, CARAS, CARPETA_SKYBOX, MOMENTOS};
 use crate::textura::{ARCHIVOS, CARPETA_TEXTURAS};
 use raylib::prelude::*;
 use std::f32::consts::PI;
@@ -189,6 +190,23 @@ fn tex_corteza(u: f32, v: f32) -> Vec3 {
     c.lerp(v3(0.10, 0.07, 0.05), grieta * 0.8)
 }
 
+// nieve: blanca azulada con ondulaciones suaves y algun destello
+fn tex_nieve(u: f32, v: f32) -> Vec3 {
+    let n = fbm(u, v, 4, 5, 121);
+    let fino = valor2(u * 96.0, v * 96.0, 96, 123);
+    let destello = if hash2((u * 256.0) as i32, (v * 256.0) as i32, 125) > 0.985 { 0.12 } else { 0.0 };
+    v3(0.88, 0.91, 0.97) * (0.9 + 0.1 * n) + Vec3::UNO * (0.04 * fino + destello)
+}
+
+// hielo: celeste palido con grietas blancas y escarcha
+fn tex_hielo(u: f32, v: f32) -> Vec3 {
+    let (f1, f2, _) = voronoi(u, v, 4, 131);
+    let grieta = 1.0 - suavizar(0.0, 0.035, f2 - f1);
+    let escarcha = suavizar(0.55, 0.8, fbm(u, v, 6, 4, 133));
+    let base = v3(0.72, 0.86, 0.95) * (0.9 + 0.1 * fbm(u, v, 3, 3, 135));
+    base.lerp(v3(0.97, 0.99, 1.0), (grieta * 0.8 + escarcha * 0.5).min(1.0))
+}
+
 fn funcion_textura(nombre: &str) -> fn(f32, f32) -> Vec3 {
     match nombre {
         "wood.png" => tex_madera,
@@ -201,12 +219,14 @@ fn funcion_textura(nombre: &str) -> fn(f32, f32) -> Vec3 {
         "leaves.png" => tex_follaje,
         "grass.png" => tex_pasto,
         "gravel.png" => tex_grava,
+        "snow.png" => tex_nieve,
+        "ice.png" => tex_hielo,
         _ => tex_corteza,
     }
 }
 
 // ---------------------------------------------------------------------
-// cielo de atardecer para el skybox
+// cielos del skybox: uno por momento del dia
 // ---------------------------------------------------------------------
 
 // fbm sin periodo (el cielo no necesita repetirse)
@@ -232,9 +252,102 @@ fn angulo_envuelto(a: f32) -> f32 {
     a
 }
 
-pub fn cielo(d: Vec3) -> Vec3 {
+// colores de cada momento del dia
+struct ColoresCielo {
+    horiz_sol: Vec3,   // horizonte del lado del sol
+    horiz_lejos: Vec3, // horizonte del lado contrario
+    medio_sol: Vec3,
+    medio_lejos: Vec3,
+    alto: Vec3,
+    cenit: Vec3,
+    nube_sombra: Vec3,
+    nube_luz: Vec3,
+    montana: Vec3,
+    cerro: Vec3,
+    nieve: Vec3,
+    bajo: Vec3, // mar de nubes debajo del horizonte
+    resplandor: Vec3,
+    estrellas: f32, // 0 = ninguna, 1 = muchas
+}
+
+fn colores(momento: usize) -> ColoresCielo {
+    match momento {
+        ambiente::AMANECER => ColoresCielo {
+            horiz_sol: v3(1.0, 0.72, 0.48),
+            horiz_lejos: v3(0.5, 0.45, 0.66),
+            medio_sol: v3(0.95, 0.62, 0.6),
+            medio_lejos: v3(0.5, 0.48, 0.7),
+            alto: v3(0.3, 0.34, 0.62),
+            cenit: v3(0.1, 0.14, 0.34),
+            nube_sombra: v3(0.42, 0.38, 0.55),
+            nube_luz: v3(1.0, 0.78, 0.62),
+            montana: v3(0.36, 0.34, 0.52),
+            cerro: v3(0.2, 0.18, 0.3),
+            nieve: v3(1.0, 0.85, 0.85),
+            bajo: v3(0.3, 0.3, 0.45),
+            resplandor: v3(1.0, 0.7, 0.4),
+            estrellas: 0.25,
+        },
+        ambiente::DIA => ColoresCielo {
+            horiz_sol: v3(0.84, 0.9, 0.96),
+            horiz_lejos: v3(0.7, 0.8, 0.95),
+            medio_sol: v3(0.58, 0.73, 0.94),
+            medio_lejos: v3(0.55, 0.7, 0.92),
+            alto: v3(0.35, 0.55, 0.9),
+            cenit: v3(0.18, 0.36, 0.78),
+            nube_sombra: v3(0.7, 0.74, 0.82),
+            nube_luz: v3(1.0, 1.0, 1.0),
+            montana: v3(0.45, 0.55, 0.72),
+            cerro: v3(0.3, 0.4, 0.5),
+            nieve: v3(0.97, 0.98, 1.0),
+            bajo: v3(0.42, 0.54, 0.76),
+            resplandor: Vec3::CERO,
+            estrellas: 0.0,
+        },
+        ambiente::ATARDECER => ColoresCielo {
+            horiz_sol: v3(1.0, 0.56, 0.30),
+            horiz_lejos: v3(0.62, 0.36, 0.50),
+            medio_sol: v3(0.86, 0.46, 0.46),
+            medio_lejos: v3(0.62, 0.36, 0.52),
+            alto: v3(0.22, 0.17, 0.40),
+            cenit: v3(0.06, 0.06, 0.18),
+            nube_sombra: v3(0.36, 0.25, 0.40),
+            nube_luz: v3(1.0, 0.64, 0.46),
+            montana: v3(0.30, 0.22, 0.38),
+            cerro: v3(0.16, 0.11, 0.20),
+            nieve: v3(0.96, 0.74, 0.78),
+            bajo: v3(0.14, 0.10, 0.22),
+            resplandor: v3(1.0, 0.55, 0.28),
+            estrellas: 0.4,
+        },
+        _ => ColoresCielo {
+            horiz_sol: v3(0.08, 0.09, 0.18),
+            horiz_lejos: v3(0.08, 0.09, 0.18),
+            medio_sol: v3(0.05, 0.06, 0.14),
+            medio_lejos: v3(0.05, 0.06, 0.14),
+            alto: v3(0.02, 0.03, 0.08),
+            cenit: v3(0.01, 0.012, 0.04),
+            nube_sombra: v3(0.04, 0.05, 0.1),
+            nube_luz: v3(0.12, 0.14, 0.22),
+            montana: v3(0.035, 0.04, 0.08),
+            cerro: v3(0.02, 0.022, 0.045),
+            nieve: v3(0.3, 0.34, 0.45),
+            bajo: v3(0.03, 0.035, 0.07),
+            resplandor: Vec3::CERO,
+            estrellas: 1.0,
+        },
+    }
+}
+
+pub fn cielo(d: Vec3, momento: usize) -> Vec3 {
     let d = d.normalizado();
-    let sol = skybox::direccion_sol();
+    let k = colores(momento);
+    // de que lado queda el resplandor del sol en este momento
+    let sol = match momento {
+        ambiente::AMANECER => ambiente::direccion_sol(6.1, Estacion::Primavera),
+        ambiente::ATARDECER => ambiente::direccion_sol(17.9, Estacion::Primavera),
+        _ => ambiente::direccion_sol(12.0, Estacion::Primavera),
+    };
     let e = d.y;
     let az = d.x.atan2(d.z);
 
@@ -243,37 +356,45 @@ pub fn cielo(d: Vec3) -> Vec3 {
     let sol_h = v3(sol.x, 0.0, sol.z).normalizado();
     let lado_sol = (horiz.dot(sol_h) * 0.5 + 0.5).powf(2.0);
 
-    let horizonte = v3(0.62, 0.36, 0.50).lerp(v3(1.0, 0.56, 0.30), lado_sol);
-    let medio = v3(0.62, 0.36, 0.52).lerp(v3(0.86, 0.46, 0.46), lado_sol);
-    let alto = v3(0.22, 0.17, 0.40);
-    let cenit = v3(0.06, 0.06, 0.18);
+    let horizonte = k.horiz_lejos.lerp(k.horiz_sol, lado_sol);
+    let medio = k.medio_lejos.lerp(k.medio_sol, lado_sol);
 
     let mut c;
     if e >= 0.0 {
         c = horizonte.lerp(medio, suavizar(0.0, 0.12, e));
-        c = c.lerp(alto, suavizar(0.08, 0.42, e));
-        c = c.lerp(cenit, suavizar(0.4, 0.95, e));
+        c = c.lerp(k.alto, suavizar(0.08, 0.42, e));
+        c = c.lerp(k.cenit, suavizar(0.4, 0.95, e));
 
-        // estrellas que empiezan a asomar arriba
-        let q = |x: f32| (x * 700.0).floor() as i32;
-        let h = hash2(q(d.x) * 31 + q(d.z), q(d.y), 7);
-        if h > 0.9975 {
-            c += Vec3::UNO * (0.7 * suavizar(0.45, 0.8, e));
+        // estrellas (y de noche una via lactea tenue)
+        if k.estrellas > 0.0 {
+            let q = |x: f32| (x * 700.0).floor() as i32;
+            let h = hash2(q(d.x) * 31 + q(d.z), q(d.y), 7);
+            let umbral = 1.0 - 0.0025 * (1.0 + 3.0 * k.estrellas);
+            if h > umbral {
+                let brillo = 0.4 + 0.6 * hash2(q(d.x), q(d.z) * 17, 9);
+                c += Vec3::UNO * (brillo * k.estrellas * suavizar(0.1 - 0.1 * k.estrellas, 0.6, e));
+            }
+            if k.estrellas >= 1.0 {
+                let eje = v3(0.45, 0.35, -0.82).normalizado();
+                let banda = (-(d.dot(eje)).powi(2) / 0.03).exp();
+                let n = fbm_libre(d.x * 6.0 + d.y * 2.0, d.z * 6.0, 5, 11);
+                c += v3(0.14, 0.13, 0.2) * (banda * suavizar(0.35, 0.8, n));
+            }
         }
 
-        // nubes alargadas, iluminadas de rosa/naranja del lado del sol
+        // nubes alargadas, iluminadas del lado del sol
         if e > 0.015 {
-            let k = 0.45 / (e + 0.12);
-            let n = fbm_libre(d.x * k * 0.7, d.z * k * 2.6, 5, 17);
+            let kk = 0.45 / (e + 0.12);
+            let n = fbm_libre(d.x * kk * 0.7, d.z * kk * 2.6, 5, 17);
             let dens = suavizar(0.46, 0.7, n) * suavizar(0.015, 0.08, e) * (1.0 - suavizar(0.3, 0.55, e));
             let luz = (lado_sol.powf(1.5) * 0.8 + 0.2 * n).clamp(0.0, 1.0);
-            let color_nube = v3(0.36, 0.25, 0.40).lerp(v3(1.0, 0.64, 0.46), luz);
+            let color_nube = k.nube_sombra.lerp(k.nube_luz, luz);
             c = c.lerp(color_nube, dens * 0.85);
         }
     } else {
-        // debajo del horizonte: un mar de nubes violeta que se oscurece
+        // debajo del horizonte: un mar de nubes que se oscurece
         let t = suavizar(0.0, 0.5, -e);
-        c = horizonte.lerp(v3(0.14, 0.10, 0.22), t * 0.9 + 0.1);
+        c = horizonte.lerp(k.bajo, t * 0.9 + 0.1);
         let n = fbm_libre(d.x * 3.0 / (-e + 0.1), d.z * 3.0 / (-e + 0.1), 4, 29);
         c = c * (0.85 + 0.3 * n);
     }
@@ -288,25 +409,22 @@ pub fn cielo(d: Vec3) -> Vec3 {
     let fuji = fuji.min(0.155);
     if e > -0.02 {
         if e < cerros {
-            c = v3(0.16, 0.11, 0.20).lerp(horizonte, 0.15);
+            c = k.cerro.lerp(horizonte, 0.15);
         } else if e < fuji.max(cordillera) {
             // mas claras abajo (bruma) y un poco mas oscuras en las cumbres
-            let lejos = v3(0.30, 0.22, 0.38);
-            c = lejos.lerp(horizonte, 0.45 - 2.0 * e.max(0.0));
+            c = k.montana.lerp(horizonte, 0.45 - 2.0 * e.max(0.0));
             if fuji > cordillera {
                 let linea_nieve = fuji * (0.66 + 0.1 * valor2(da * 60.0, 3.0, 0, 47));
                 if e > linea_nieve {
-                    c = v3(0.96, 0.74, 0.78); // nieve con el rosa del atardecer
+                    c = k.nieve;
                 }
             }
         }
     }
 
-    // el sol y su resplandor
+    // resplandor del sol cerca del horizonte (el disco se dibuja al trazar)
     let cs = d.dot(sol).max(0.0);
-    c += v3(1.0, 0.55, 0.28) * (cs.powf(6.0) * 0.35 + cs.powf(60.0) * 0.6);
-    let disco = suavizar(0.9990, 0.9996, cs);
-    c = c.lerp(v3(1.0, 0.93, 0.75), disco);
+    c += k.resplandor * (cs.powf(6.0) * 0.35 + cs.powf(60.0) * 0.5);
     c
 }
 
@@ -318,20 +436,25 @@ fn faltan(carpeta: &str, nombres: &[&str]) -> bool {
 
 // genera todo lo que falte (o todo, si forzar = true)
 pub fn asegurar_assets(forzar: bool) {
-    if forzar || faltan(CARPETA_TEXTURAS, &ARCHIVOS) {
-        std::fs::create_dir_all(CARPETA_TEXTURAS).expect("no se pudo crear la carpeta de texturas");
-        for nombre in ARCHIVOS {
-            println!("generando {CARPETA_TEXTURAS}/{nombre}");
-            let f = funcion_textura(nombre);
-            guardar(&format!("{CARPETA_TEXTURAS}/{nombre}"), LADO_TEXTURA, &f);
+    for nombre in ARCHIVOS {
+        if !forzar && !faltan(CARPETA_TEXTURAS, &[nombre]) {
+            continue;
         }
+        std::fs::create_dir_all(CARPETA_TEXTURAS).expect("no se pudo crear la carpeta de texturas");
+        println!("generando {CARPETA_TEXTURAS}/{nombre}");
+        let f = funcion_textura(nombre);
+        guardar(&format!("{CARPETA_TEXTURAS}/{nombre}"), LADO_TEXTURA, &f);
     }
-    if forzar || faltan(CARPETA_SKYBOX, &CARAS) {
-        std::fs::create_dir_all(CARPETA_SKYBOX).expect("no se pudo crear la carpeta del skybox");
+    for (momento, carpeta) in MOMENTOS.iter().enumerate() {
+        let dir = format!("{CARPETA_SKYBOX}/{carpeta}");
+        if !forzar && !faltan(&dir, &CARAS) {
+            continue;
+        }
+        std::fs::create_dir_all(&dir).expect("no se pudo crear la carpeta del skybox");
+        println!("generando skybox {dir} (solo la primera vez, tarda unos segundos)");
         for (cara, nombre) in CARAS.iter().enumerate() {
-            println!("generando {CARPETA_SKYBOX}/{nombre}");
-            guardar(&format!("{CARPETA_SKYBOX}/{nombre}"), LADO_CIELO, &|u, v| {
-                cielo(skybox::direccion_de_cara(cara, u * 2.0 - 1.0, v * 2.0 - 1.0))
+            guardar(&format!("{dir}/{nombre}"), LADO_CIELO, &|u, v| {
+                cielo(skybox::direccion_de_cara(cara, u * 2.0 - 1.0, v * 2.0 - 1.0), momento)
             });
         }
     }
