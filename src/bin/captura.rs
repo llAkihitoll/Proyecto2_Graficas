@@ -1,9 +1,11 @@
 // renderiza una imagen sin abrir ventana y la guarda en PNG. sirve para
 // revisar la escena o sacar imagenes para el informe:
-//   cargo run --release --bin captura -- <vista 1-5> <etapa 0-4> <ancho> <alto> <archivo.png>
+//   cargo run --release --bin captura -- <vista 1-5> <etapa 0-4> <ancho> <alto> <archivo.png> [estacion 0-3] [hora]
 // "etapa" aplica las interacciones en orden: 1 campana, 2 linternas,
-// 3 fuente, 4 puerta (con sus animaciones ya terminadas)
+// 3 fuente, 4 puerta (con sus animaciones ya terminadas).
+// estacion: 0 primavera, 1 verano, 2 otono, 3 invierno. hora: 0 a 24
 
+use diorama_templo::ambiente::Estacion;
 use diorama_templo::camara::Camara;
 use diorama_templo::escena::Escena;
 use diorama_templo::figuras::Interactivo;
@@ -23,15 +25,23 @@ fn main() {
     let ancho = num(3, 880) as usize;
     let alto = num(4, 550) as usize;
     let salida = args.get(5).cloned().unwrap_or_else(|| "captura.png".to_string());
+    let estacion = Estacion::desde_indice(num(6, 0));
+    let hora: Option<f32> = args.get(7).and_then(|s| s.parse().ok());
 
     diorama_templo::silenciar_logs();
     generador::asegurar_assets(false);
     let recursos = Recursos {
         texturas: Texturas::cargar_todas().expect("texturas"),
-        skybox: Skybox::cargar().expect("skybox"),
+        cielos: Skybox::cargar_todos().expect("skybox"),
     };
 
     let mut estado = EstadoDiorama::default();
+    estado.ambiente.estacion = estacion;
+    if let Some(h) = hora {
+        estado.ambiente.hora = h;
+    }
+    // las particulas en una posicion intermedia de su caida
+    estado.ambiente.t_particulas = 7.3;
     let pasos = [Interactivo::Campana, Interactivo::Linterna, Interactivo::Fuente, Interactivo::Puerta];
     for p in pasos.iter().take(etapa as usize) {
         estado.interactuar(*p);
