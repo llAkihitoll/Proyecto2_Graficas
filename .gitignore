@@ -1,0 +1,17 @@
+# compilacion de cargo
+/target
+**/*.rs.bk
+*.pdb
+
+# captura rapida con la tecla P (las imagenes del README estan en capturas/)
+/captura.png
+
+# editores
+.vscode/
+.idea/
+*.swp
+
+# sistema operativo
+Thumbs.db
+desktop.ini
+.DS_Store

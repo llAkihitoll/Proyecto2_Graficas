@@ -1,0 +1,5 @@
+# en esta maquina, bindgen (que usa raylib-sys para generar sus bindings)
+# no encuentra libclang.dll solo, aunque este instalado. con esto cargo
+# ya arranca con la variable puesta, sin tener que exportarla a mano.
+[env]
+LIBCLANG_PATH = "C:\\msys64\\ucrt64\\bin"
