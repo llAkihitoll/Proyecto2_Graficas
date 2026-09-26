@@ -1,51 +1,69 @@
 // la escena del diorama. se divide en dos BVH:
-//   estatica: todo lo que nunca cambia (templo, jardin, techos). se
-//             construye una sola vez al arrancar
+//   estatica: todo lo que no se mueve (templo, jardin, techos). se
+//             construye al arrancar y cada vez que cambia la estacion
+//             (cambian el follaje, la nieve, el hielo del estanque...)
 //   dinamica: lo que se anima o cambia con las interacciones (campana,
-//             puertas, llamas, agua de la fuente). se reconstruye cuando
-//             cambia el estado, y como son pocos objetos cuesta muy poco
+//             puertas, llamas, agua de la fuente, particulas). se
+//             reconstruye cuando cambia el estado, y como son pocos
+//             objetos cuesta muy poco
+// ademas guarda la iluminacion del momento (sol/luna, cielo, exposicion).
 
 pub mod jardin;
 pub mod techo;
 pub mod templo;
 
+use crate::ambiente::{self, Estacion, Iluminacion, Paleta};
 use crate::bvh::Bvh;
 use crate::figuras::Aabb;
 use crate::interaccion::EstadoDiorama;
-use crate::matematica::{v3, Vec3};
+use crate::matematica::v3;
 use crate::render::Luz;
-use crate::skybox;
 
 pub struct Escena {
     pub estatica: Bvh,
     pub dinamica: Bvh,
     pub luces: Vec<Luz>,
-    pub dir_sol: Vec3,
+    pub luz: Iluminacion,
     pub interior: Aabb,
+    estacion: Estacion,
+}
+
+fn construir_estatica(estacion: Estacion) -> Bvh {
+    let paleta = Paleta::de(estacion);
+    let mut objetos = Vec::new();
+    templo::crear_templo(&mut objetos, &paleta);
+    jardin::crear_jardin(&mut objetos, &paleta);
+    Bvh::construir(objetos)
 }
 
 impl Escena {
     pub fn nueva(estado: &EstadoDiorama) -> Escena {
-        let mut objetos = Vec::new();
-        templo::crear_templo(&mut objetos);
-        jardin::crear_jardin(&mut objetos);
+        let a = &estado.ambiente;
         let mut escena = Escena {
-            estatica: Bvh::construir(objetos),
+            estatica: construir_estatica(a.estacion),
             dinamica: Bvh::construir(Vec::new()),
             luces: Vec::new(),
-            dir_sol: skybox::direccion_sol(),
+            luz: ambiente::iluminacion(a.hora, a.estacion),
             interior: templo::interior(),
+            estacion: a.estacion,
         };
         escena.actualizar(estado);
         escena
     }
 
     pub fn actualizar(&mut self, estado: &EstadoDiorama) {
+        let a = &estado.ambiente;
+        if a.estacion != self.estacion {
+            self.estatica = construir_estatica(a.estacion);
+            self.estacion = a.estacion;
+        }
+        self.luz = ambiente::iluminacion(a.hora, a.estacion);
+
         let mut objetos = Vec::new();
         // luz calida del altar, dentro del templo (con sombras)
         let mut luces = vec![Luz { pos: v3(0.0, 2.7, -7.6), color: v3(1.0, 0.68, 0.35) * 1.3, radio: 3.8, sombras: true }];
         templo::crear_puertas(&mut objetos, estado.apertura_puerta);
-        jardin::crear_dinamicos(&mut objetos, &mut luces, estado);
+        jardin::crear_dinamicos(&mut objetos, &mut luces, estado, self.luz.noche);
         self.dinamica = Bvh::construir(objetos);
         self.luces = luces;
     }

@@ -33,6 +33,8 @@ pub struct Techo {
     pub nz: usize,
     // anillo = techo de faldon que rodea un piso superior (sin cumbrera)
     pub anillo: bool,
+    // material de la superficie: tejas, o nieve en invierno
+    pub tejas: Material,
 }
 
 impl Techo {
@@ -109,7 +111,7 @@ impl Techo {
                 let uv: Vec<[f32; 2]> = esquinas.iter().map(|&(x, z)| self.uv(x, z)).collect();
                 for (a, b, c) in [(0, 1, 2), (0, 2, 3)] {
                     v.push(
-                        triangulo([p[a], p[b], p[c]], [n[a], n[b], n[c]], [uv[a], uv[b], uv[c]], TEJAS)
+                        triangulo([p[a], p[b], p[c]], [n[a], n[b], n[c]], [uv[a], uv[b], uv[c]], self.tejas)
                             .con_reverso(MADERA_OSCURA)
                             .con_relieve(Relieve::Tejas),
                     );

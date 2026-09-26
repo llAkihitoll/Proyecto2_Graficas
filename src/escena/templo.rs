@@ -13,6 +13,7 @@
 // (hacia el estanque y la entrada del jardin).
 
 use super::techo::{friso, Techo};
+use crate::ambiente::Paleta;
 use crate::figuras::*;
 use crate::material::*;
 use crate::matematica::{suavizar, v3, Mat3};
@@ -49,6 +50,7 @@ pub fn techo_inferior() -> Techo {
         nx: 40,
         nz: 30,
         anillo: true,
+        tejas: TEJAS,
     }
 }
 
@@ -67,6 +69,7 @@ pub fn techo_superior() -> Techo {
         nx: 36,
         nz: 26,
         anillo: false,
+        tejas: TEJAS,
     }
 }
 
@@ -75,7 +78,7 @@ pub fn interior() -> Aabb {
     Aabb { min: v3(-3.25, Y_PISO - 0.01, ZB + 0.05), max: v3(3.25, Y_CAB, ZF - 0.05) }
 }
 
-pub fn crear_templo(v: &mut Vec<Objeto>) {
+pub fn crear_templo(v: &mut Vec<Objeto>, paleta: &Paleta) {
     crear_base(v);
     crear_escaleras(v);
     crear_veranda(v);
@@ -86,7 +89,7 @@ pub fn crear_templo(v: &mut Vec<Objeto>) {
     crear_vigas(v);
     crear_mensulas(v, &perimetro(&XS, &ZS), 4.1, 0.8, 0.12);
     crear_piso_superior(v);
-    crear_techos(v);
+    crear_techos(v, paleta);
     crear_decoraciones(v);
     crear_altar(v);
 }
@@ -325,9 +328,9 @@ fn crear_piso_superior(v: &mut Vec<Objeto>) {
     crear_mensulas(v, &perimetro(&xs, &zs), 7.2, 0.55, 0.08);
 }
 
-fn crear_techos(v: &mut Vec<Objeto>) {
-    let inf = techo_inferior();
-    let sup = techo_superior();
+fn crear_techos(v: &mut Vec<Objeto>, paleta: &Paleta) {
+    let inf = Techo { tejas: paleta.tejas, ..techo_inferior() };
+    let sup = Techo { tejas: paleta.tejas, ..techo_superior() };
     inf.construir(v);
     sup.construir(v);
 

@@ -8,7 +8,9 @@
 // la vegetacion (pinos, arces, sakura, bambu, arbustos) queda en los
 // bordes del diorama para enmarcar el templo sin taparlo.
 
+use crate::ambiente::{Paleta, Particulas};
 use crate::interaccion::EstadoDiorama;
+use crate::ruido::hash;
 use crate::figuras::*;
 use crate::material::*;
 use crate::matematica::{v3, Mat3, Vec3};
@@ -37,32 +39,32 @@ fn altura_puente(z: f32) -> f32 {
     0.05 + 0.95 * (1.0 - ((z - zc) / medio).powi(2))
 }
 
-pub fn crear_jardin(v: &mut Vec<Objeto>) {
-    crear_terreno(v);
-    crear_estanque(v);
+pub fn crear_jardin(v: &mut Vec<Objeto>, paleta: &Paleta) {
+    crear_terreno(v, paleta);
+    crear_estanque(v, paleta);
     crear_puente(v);
     crear_camino(v);
     crear_torii(v);
-    crear_campanario(v);
+    crear_campanario(v, paleta);
     crear_fuente(v);
     for (x, z) in LINTERNAS {
         crear_linterna(v, x, z);
     }
-    crear_vegetacion(v);
+    crear_vegetacion(v, paleta);
 }
 
 // ---------------------------------------------------------------------
 // terreno: una "isla" flotante con capas de tierra, pasto arriba y un
 // hueco donde va el estanque
 // ---------------------------------------------------------------------
-fn crear_terreno(v: &mut Vec<Objeto>) {
+fn crear_terreno(v: &mut Vec<Objeto>, paleta: &Paleta) {
     v.push(caja_mm(v3(-12.0, -1.8, -12.0), v3(12.0, -0.6, 12.0), TIERRA));
     v.push(caja_mm(v3(-11.3, -2.7, -11.3), v3(11.3, -1.8, 11.3), TIERRA.con_albedo(v3(0.55, 0.45, 0.38))));
     // pasto en 4 piezas alrededor del estanque
-    v.push(caja_mm(v3(-12.0, -0.6, -12.0), v3(12.0, 0.0, EST_Z0), PASTO));
-    v.push(caja_mm(v3(-12.0, -0.6, EST_Z1), v3(12.0, 0.0, 12.0), PASTO));
-    v.push(caja_mm(v3(-12.0, -0.6, EST_Z0), v3(-EST_X, 0.0, EST_Z1), PASTO));
-    v.push(caja_mm(v3(EST_X, -0.6, EST_Z0), v3(12.0, 0.0, EST_Z1), PASTO));
+    v.push(caja_mm(v3(-12.0, -0.6, -12.0), v3(12.0, 0.0, EST_Z0), paleta.pasto));
+    v.push(caja_mm(v3(-12.0, -0.6, EST_Z1), v3(12.0, 0.0, 12.0), paleta.pasto));
+    v.push(caja_mm(v3(-12.0, -0.6, EST_Z0), v3(-EST_X, 0.0, EST_Z1), paleta.pasto));
+    v.push(caja_mm(v3(EST_X, -0.6, EST_Z0), v3(12.0, 0.0, EST_Z1), paleta.pasto));
     // patio de grava rastrillada frente al templo y franja del camino
     v.push(caja_mm(v3(-8.6, 0.0, -3.3), v3(8.6, 0.03, 1.55), GRAVA));
     v.push(caja_mm(v3(-1.05, 0.0, 6.05), v3(1.05, 0.03, 11.9), GRAVA));
@@ -72,13 +74,15 @@ fn crear_terreno(v: &mut Vec<Objeto>) {
 // estanque: lecho de grava, agua (refracta y refleja), borde de piedra,
 // rocas, peces koi y hojas de loto
 // ---------------------------------------------------------------------
-fn crear_estanque(v: &mut Vec<Objeto>) {
+fn crear_estanque(v: &mut Vec<Objeto>, paleta: &Paleta) {
     v.push(caja_mm(v3(-EST_X, -0.62, EST_Z0), v3(EST_X, -0.55, EST_Z1), LECHO));
     // el agua se mete un poquito dentro de las paredes y del lecho, asi
-    // un rayo refractado siempre choca primero con el fondo o el borde
+    // un rayo refractado siempre choca primero con el fondo o el borde.
+    // en invierno es hielo: sin ondas, pero igual refracta
+    let ondas = if paleta.estanque_congelado { 0.0 } else { 0.06 };
     v.push(
-        caja_mm(v3(-EST_X - 0.03, -0.58, EST_Z0 - 0.03), v3(EST_X + 0.03, Y_AGUA, EST_Z1 + 0.03), AGUA)
-            .con_relieve(Relieve::Ondas { cx: 0.0, cz: 0.0, amplitud: 0.06, tiempo: 0.0, radial: false }),
+        caja_mm(v3(-EST_X - 0.03, -0.58, EST_Z0 - 0.03), v3(EST_X + 0.03, Y_AGUA, EST_Z1 + 0.03), paleta.agua_estanque)
+            .con_relieve(Relieve::Ondas { cx: 0.0, cz: 0.0, amplitud: ondas, tiempo: 0.0, radial: false }),
     );
     // borde de piedra
     v.push(caja_mm(v3(-EST_X, -0.6, EST_Z0), v3(-EST_X + 0.1, 0.04, EST_Z1), PIEDRA));
@@ -104,6 +108,10 @@ fn crear_estanque(v: &mut Vec<Objeto>) {
     ];
     for (x, y, z, rx, ry, rz, giro) in rocas {
         v.push(elipsoide(v3(x, y, z), v3(rx, ry, rz), ROCA).rotado(Mat3::rot_y(giro)));
+        if paleta.nieve_en_pinos {
+            // gorro de nieve sobre la roca
+            v.push(elipsoide(v3(x, y + ry * 0.62, z), v3(rx * 0.8, ry * 0.45, rz * 0.8), NIEVE).rotado(Mat3::rot_y(giro)));
+        }
     }
 
     // peces koi bajo el agua (se ven gracias a la refraccion)
@@ -125,6 +133,9 @@ fn crear_estanque(v: &mut Vec<Objeto>) {
         }
     }
 
+    if !paleta.lotos {
+        return;
+    }
     // hojas de loto flotando y un par de flores
     let hojas = [(-5.5, 4.8, 0.45), (-4.8, 5.25, 0.33), (-6.0, 2.8, 0.4), (4.6, 3.3, 0.4), (5.4, 2.6, 0.35), (-2.2, 4.9, 0.3)];
     for (x, z, r) in hojas {
@@ -225,7 +236,7 @@ fn crear_torii(v: &mut Vec<Objeto>) {
 // campanario (shoro): base de piedra, 4 postes, vigas y techo propio.
 // la campana y el mazo son dinamicos (ver crear_campana)
 // ---------------------------------------------------------------------
-fn crear_campanario(v: &mut Vec<Objeto>) {
+fn crear_campanario(v: &mut Vec<Objeto>, paleta: &Paleta) {
     let (bx, bz) = POS_CAMPANA;
     v.push(caja_mm(v3(bx - 1.3, 0.0, bz - 1.3), v3(bx + 1.3, 0.4, bz + 1.3), PIEDRA));
     for (dx, dz) in [(-0.95f32, -0.95f32), (0.95, -0.95), (-0.95, 0.95), (0.95, 0.95)] {
@@ -253,6 +264,7 @@ fn crear_campanario(v: &mut Vec<Objeto>) {
         nx: 14,
         nz: 14,
         anillo: false,
+        tejas: paleta.tejas,
     }
     .construir(v);
 }
@@ -429,7 +441,7 @@ fn rama(a: Vec3, b: Vec3, r0: f32, r1: f32, m: Material) -> Objeto {
 }
 
 // pino negro japones con la copa podada en "nubes"
-fn pino(v: &mut Vec<Objeto>, base: Vec3, alto: f32, incl: Vec3) {
+fn pino(v: &mut Vec<Objeto>, base: Vec3, alto: f32, incl: Vec3, nieve: bool) {
     let tope = base + v3(incl.x, alto, incl.z);
     v.push(rama(base, tope, 0.28, 0.13, CORTEZA));
     let p1 = base.lerp(tope, 0.55);
@@ -442,10 +454,22 @@ fn pino(v: &mut Vec<Objeto>, base: Vec3, alto: f32, incl: Vec3) {
     v.push(elipsoide(tope + v3(-0.2, 0.62, 0.1), v3(0.8, 0.3, 0.7), HOJAS_PINO));
     v.push(elipsoide(e1, v3(1.0, 0.32, 0.85), HOJAS_PINO));
     v.push(elipsoide(e2, v3(0.95, 0.3, 0.8), HOJAS_PINO));
+    if nieve {
+        // la nieve se acumula arriba de cada "nube" de la copa
+        for (c, r) in [
+            (tope + v3(0.0, 0.3, 0.0), v3(1.15, 0.26, 0.95)),
+            (tope + v3(-0.2, 0.78, 0.1), v3(0.68, 0.18, 0.58)),
+            (e1 + v3(0.0, 0.18, 0.0), v3(0.85, 0.2, 0.72)),
+            (e2 + v3(0.0, 0.17, 0.0), v3(0.8, 0.19, 0.66)),
+        ] {
+            v.push(elipsoide(c, r, NIEVE));
+        }
+    }
 }
 
-// arbol de copa redonda (arce rojo, sakura)
-fn arbol(v: &mut Vec<Objeto>, base: Vec3, alto: f32, ancho: f32, hojas: Material, incl: Vec3) {
+// arbol de copa redonda (arce, sakura). sin hojas (invierno) se ven sus
+// ramas desnudas
+fn arbol(v: &mut Vec<Objeto>, base: Vec3, alto: f32, ancho: f32, hojas: Option<Material>, incl: Vec3) {
     let tope = base + v3(incl.x, alto, incl.z);
     v.push(rama(base, tope, 0.22, 0.11, CORTEZA));
     let medio = base.lerp(tope, 0.6);
@@ -457,8 +481,25 @@ fn arbol(v: &mut Vec<Objeto>, base: Vec3, alto: f32, ancho: f32, hojas: Material
         (v3(-0.8, 0.1, -0.35), v3(0.8, 0.6, 0.85)),
         (v3(0.1, -0.1, 0.85), v3(0.75, 0.55, 0.7)),
     ];
-    for (d, r) in copas {
-        v.push(elipsoide(tope + d * ancho, r * ancho, hojas));
+    match hojas {
+        Some(m) => {
+            for (d, r) in copas {
+                v.push(elipsoide(tope + d * ancho, r * ancho, m));
+            }
+        }
+        None => {
+            for (d, _) in copas {
+                v.push(rama(tope - v3(0.0, 0.3, 0.0), tope + d * (ancho * 1.3), 0.06, 0.02, CORTEZA));
+            }
+        }
+    }
+}
+
+// hojas o petalos caidos alrededor del tronco
+fn hojarasca(v: &mut Vec<Objeto>, base: Vec3, ancho: f32, m: Material) {
+    for (dx, dz, r) in [(0.5f32, 0.3f32, 0.9f32), (-0.6, -0.2, 0.7), (0.1, -0.7, 0.6)] {
+        let c = base + v3(dx * ancho, 0.015, dz * ancho);
+        v.push(elipsoide(c, v3(r * ancho, 0.025, r * ancho * 0.8), m).rotado(Mat3::rot_y(dx * 3.0)));
     }
 }
 
@@ -482,14 +523,30 @@ fn arbusto(v: &mut Vec<Objeto>, x: f32, z: f32, r: Vec3, m: Material) {
     v.push(elipsoide(v3(x - r.x * 0.4, r.y * 0.38, z - r.z * 0.45), r * 0.62, m));
 }
 
-fn crear_vegetacion(v: &mut Vec<Objeto>) {
-    pino(v, v3(-9.6, 0.0, 8.6), 3.2, v3(0.8, 0.0, -0.3));
-    pino(v, v3(9.3, 0.0, -9.2), 3.6, v3(-0.7, 0.0, 0.4));
-    arbol(v, v3(-9.2, 0.0, -8.2), 3.4, 1.15, HOJAS_ARCE, v3(0.4, 0.0, 0.2));
-    arbol(v, v3(9.4, 0.0, 3.6), 2.8, 1.0, HOJAS_ARCE, v3(-0.3, 0.0, 0.1));
-    arbol(v, v3(-4.4, 0.0, 9.6), 2.2, 0.75, HOJAS_ARCE, v3(0.1, 0.0, 0.0));
+fn crear_vegetacion(v: &mut Vec<Objeto>, paleta: &Paleta) {
+    pino(v, v3(-9.6, 0.0, 8.6), 3.2, v3(0.8, 0.0, -0.3), paleta.nieve_en_pinos);
+    pino(v, v3(9.3, 0.0, -9.2), 3.6, v3(-0.7, 0.0, 0.4), paleta.nieve_en_pinos);
+    let arces = [
+        (v3(-9.2, 0.0, -8.2), 3.4, 1.15, v3(0.4, 0.0, 0.2)),
+        (v3(9.4, 0.0, 3.6), 2.8, 1.0, v3(-0.3, 0.0, 0.1)),
+        (v3(-4.4, 0.0, 9.6), 2.2, 0.75, v3(0.1, 0.0, 0.0)),
+    ];
+    for (base, alto, ancho, incl) in arces {
+        arbol(v, base, alto, ancho, paleta.hojas_arce, incl);
+    }
     // sakura inclinado sobre el estanque: se refleja en el agua
-    arbol(v, v3(-9.0, 0.0, 3.8), 3.0, 1.2, HOJAS_SAKURA, v3(1.3, 0.0, 0.0));
+    let sakura = v3(-9.0, 0.0, 3.8);
+    arbol(v, sakura, 3.0, 1.2, paleta.hojas_sakura, v3(1.3, 0.0, 0.0));
+    if let Some(m) = paleta.hojarasca {
+        // en primavera caen petalos del sakura, en otono hojas de los arces
+        if paleta.particulas == Particulas::Petalos {
+            hojarasca(v, sakura, 1.1, m);
+        } else {
+            for (base, _, ancho, _) in arces {
+                hojarasca(v, base, ancho * 1.3, m);
+            }
+        }
+    }
 
     // bosquecillo de bambu detras de la fuente
     let canas = [
@@ -507,22 +564,23 @@ fn crear_vegetacion(v: &mut Vec<Objeto>) {
         bambu(v, x, z, h, i);
     }
 
-    let verde = HOJAS_ARBUSTO;
+    let verde = paleta.arbusto;
+    let flor = paleta.arbusto_flor;
     let arbustos = [
         (-3.9, -2.9, v3(0.55, 0.45, 0.5), verde),
         (3.9, -2.9, v3(0.55, 0.45, 0.5), verde),
-        (-5.7, -4.6, v3(0.7, 0.5, 0.6), AZALEA),
-        (5.7, -4.9, v3(0.7, 0.5, 0.6), AZALEA),
+        (-5.7, -4.6, v3(0.7, 0.5, 0.6), flor),
+        (5.7, -4.9, v3(0.7, 0.5, 0.6), flor),
         (-5.6, -8.9, v3(0.8, 0.6, 0.7), verde),
-        (5.8, -9.6, v3(0.75, 0.55, 0.7), AZALEA),
-        (-7.8, 6.5, v3(0.8, 0.55, 0.65), AZALEA),
+        (5.8, -9.6, v3(0.75, 0.55, 0.7), flor),
+        (-7.8, 6.5, v3(0.8, 0.55, 0.65), flor),
         (7.7, 6.6, v3(0.75, 0.5, 0.6), verde),
-        (3.3, 6.6, v3(0.5, 0.38, 0.45), AZALEA),
+        (3.3, 6.6, v3(0.5, 0.38, 0.45), flor),
         (-3.3, 6.5, v3(0.55, 0.4, 0.5), verde),
         (2.8, 11.1, v3(0.6, 0.45, 0.55), verde),
-        (-2.9, 11.0, v3(0.6, 0.45, 0.5), AZALEA),
+        (-2.9, 11.0, v3(0.6, 0.45, 0.5), flor),
         (-10.6, 0.5, v3(0.7, 0.5, 0.7), verde),
-        (10.7, 0.8, v3(0.7, 0.5, 0.6), AZALEA),
+        (10.7, 0.8, v3(0.7, 0.5, 0.6), flor),
     ];
     for (x, z, r, m) in arbustos {
         arbusto(v, x, z, r, m);
@@ -538,12 +596,69 @@ fn crear_vegetacion(v: &mut Vec<Objeto>) {
     ];
     for (x, z, r, g) in rocas {
         v.push(elipsoide(v3(x, r.y * 0.3, z), r, ROCA).rotado(Mat3::rot_y(g)));
+        if paleta.nieve_en_pinos {
+            v.push(elipsoide(v3(x, r.y * 0.85, z), v3(r.x * 0.8, r.y * 0.4, r.z * 0.8), NIEVE).rotado(Mat3::rot_y(g)));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------
+// particulas de cada estacion: petalos (primavera), luciernagas de noche
+// (verano), hojas (otono) y nieve (invierno). su posicion sale de un
+// hash por particula y del reloj, asi no hace falta guardar estado
+// ---------------------------------------------------------------------
+fn crear_particulas(v: &mut Vec<Objeto>, estado: &EstadoDiorama, noche: f32) {
+    let tipo = Paleta::de(estado.ambiente.estacion).particulas;
+    let t = estado.ambiente.t_particulas;
+    let h = |i: u32, k: u32| hash(i.wrapping_mul(7919).wrapping_add(k.wrapping_mul(104_729)));
+    let tau = 2.0 * PI;
+
+    if tipo == Particulas::Luciernagas {
+        if noche < 0.2 {
+            return; // de dia no se ven
+        }
+        for i in 0..26 {
+            // alrededor del estanque y de los arbustos, flotando bajito
+            let cx = -8.0 + 16.0 * h(i, 1);
+            let cz = -1.0 + 9.0 * h(i, 2);
+            let x = cx + 0.6 * (t * 0.7 + tau * h(i, 3)).sin();
+            let z = cz + 0.6 * (t * 0.5 + tau * h(i, 4)).cos();
+            let y = 0.4 + 1.3 * h(i, 5) + 0.25 * (t * 1.3 + tau * h(i, 6)).sin();
+            let parpadeo = (0.5 + 0.5 * (t * 3.0 + tau * h(i, 7)).sin()) * noche;
+            v.push(esfera(v3(x, y, z), 0.035, LUCIERNAGA.con_emision(LUCIERNAGA.emision * parpadeo)).sin_sombra());
+        }
+        return;
+    }
+
+    let (cantidad, velocidad, radios) = match tipo {
+        Particulas::Petalos => (40, 0.5, v3(0.07, 0.012, 0.05)),
+        Particulas::Hojas => (36, 0.8, v3(0.09, 0.012, 0.065)),
+        _ => (60, 0.6, v3(0.04, 0.04, 0.04)),
+    };
+    let alto = 9.0;
+    for i in 0..cantidad {
+        let x0 = -11.0 + 22.0 * h(i, 1);
+        let z0 = -11.0 + 22.0 * h(i, 2);
+        let caida = t * velocidad * (0.8 + 0.4 * h(i, 4)) + alto * h(i, 3);
+        let y = alto - caida.rem_euclid(alto);
+        let x = x0 + 0.6 * (t * 0.9 + tau * h(i, 5)).sin();
+        let z = z0 + 0.4 * (t * 0.7 + tau * h(i, 6)).cos();
+        let m = match tipo {
+            Particulas::Petalos => PETALO,
+            Particulas::Hojas if i % 2 == 0 => HOJAS_ARCE,
+            Particulas::Hojas => HOJAS_OTONO,
+            _ => NIEVE,
+        };
+        // los petalos y hojas dan vueltas mientras caen
+        let giro = Mat3::rot_x(t * 2.0 + tau * h(i, 7)).tras(&Mat3::rot_z(t * 1.3 + tau * h(i, 8)));
+        v.push(elipsoide(v3(x, y, z), radios, m).rotado(giro).sin_sombra());
     }
 }
 
 // todo lo que se reconstruye cuando cambia el estado del diorama
-pub fn crear_dinamicos(v: &mut Vec<Objeto>, luces: &mut Vec<Luz>, estado: &EstadoDiorama) {
+pub fn crear_dinamicos(v: &mut Vec<Objeto>, luces: &mut Vec<Luz>, estado: &EstadoDiorama, noche: f32) {
     crear_campana(v, estado);
     crear_agua_fuente(v, estado);
     crear_luces_linternas(v, luces, estado.linternas_encendidas);
+    crear_particulas(v, estado, noche);
 }
