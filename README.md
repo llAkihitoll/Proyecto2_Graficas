@@ -1,7 +1,8 @@
 # Diorama interactivo: templo japonés con raytracing
 
-Diorama 3D de un jardín japonés al atardecer con un templo de dos niveles
-como punto focal, renderizado **con un raytracer propio escrito en Rust**.
+Diorama 3D de un jardín japonés con un templo de dos niveles como punto
+focal, con **ciclo de día y noche** y **las cuatro estaciones**,
+renderizado **con un raytracer propio escrito en Rust**.
 [raylib](https://www.raylib.com/) solo se usa para abrir la ventana, leer
 el teclado/mouse y leer/guardar imágenes PNG: la intersección de rayos,
 materiales, texturas, luces, sombras, reflexión, refracción y skybox
@@ -21,8 +22,9 @@ están implementados a mano.
 cargo run --release
 ```
 
-La primera vez se generan las texturas (`assets/textures`) y el skybox
-(`assets/skybox`) si no existen (tarda unos segundos). Para regenerarlos:
+La primera vez se generan las texturas (`assets/textures`) y los 4
+skyboxes (`assets/skybox`) si no existen (tarda unos 10 segundos). Para
+regenerarlos:
 
 ```
 cargo run --release --bin generar_texturas
@@ -31,11 +33,13 @@ cargo run --release --bin generar_texturas
 También hay un renderizador sin ventana, útil para sacar imágenes:
 
 ```
-cargo run --release --bin captura -- <vista 1-5> <etapa 0-4> <ancho> <alto> <archivo.png>
+cargo run --release --bin captura -- <vista 1-5> <etapa 0-4> <ancho> <alto> <archivo.png> [estacion 0-3] [hora]
 ```
 
-Y pruebas de la matemática (Snell, reflexión interna total, rotaciones) y
-de la progresión de interacciones:
+(`estacion`: 0 primavera, 1 verano, 2 otoño, 3 invierno; `hora` de 0 a 24.)
+
+Y pruebas de la matemática (Snell, reflexión interna total, rotaciones),
+de la progresión de interacciones y del recorrido del sol:
 
 ```
 cargo test --release
@@ -61,34 +65,69 @@ cargo test --release
 | Interactuar con el objeto bajo el mouse | clic izquierdo (sin arrastrar) |
 | Interactuar con el objeto en el centro (mira) | `E` |
 | Campana / linternas / fuente / puerta | `B` / `L` / `F` / `T` |
+| Cambiar de estación | `C` |
+| Pausar / reanudar el ciclo de día y noche | `N` |
+| Atrasar / adelantar la hora (mantener) | `,` / `.` |
 | Vistas predefinidas | `1` general, `2` templo, `3` estanque, `4` techo, `5` patio |
 | Reiniciar cámara | `R` |
 | Captura de pantalla (`captura.png`) | `P` |
 | Mostrar/ocultar ayuda | `H` |
 
-Al pasar el mouse sobre un objeto interactivo aparece su nombre (y si
-todavía está bloqueado).
+Al pasar el mouse sobre un objeto interactivo aparece su nombre.
 
-## Recorrido (progresión)
+## Interacciones
 
-Cada interacción se **desbloquea al completar la anterior**; una vez
-desbloqueada se puede usar libremente. El HUD muestra el objetivo actual.
-
-```
-Explorar el jardín → tocar la CAMPANA (B)
-  → encender las LINTERNAS (L)
-    → seguir el camino y activar la FUENTE (F)
-      → abrir la PUERTA del templo (T) y ver el altar
-```
+Todas las interacciones están disponibles desde el inicio y se pueden
+usar en cualquier orden y las veces que se quiera.
 
 | Interacción | Qué pasa |
 |---|---|
-| 🔔 Campana | El mazo de madera se acerca y golpea; la campana oscila alrededor de su punto de suspensión (oscilación amortiguada) y el bronce brilla y se apaga de a poco. |
-| 🏮 Linternas | Las 4 linternas de piedra encienden su llama (material emisivo, visible refractada a través del vidrio) y las 2 linternas de papel del alero se iluminan. Cada una agrega una luz puntual cálida que ilumina el entorno. |
-| ⛲ Fuente | El nivel del agua sube, aparecen ondas circulares animadas (perturbación de la normal) y chorros de gotas que caen del cuenco superior. Con más agua se ven mejor las monedas refractadas en el fondo. |
-| 🚪 Puerta | Las dos hojas giran sobre sus bisagras hacia adentro y dejan ver el altar dorado iluminado por velas. |
+| Campana | El mazo de madera se acerca y golpea; la campana oscila alrededor de su punto de suspensión (oscilación amortiguada) y el bronce brilla y se apaga de a poco. |
+| Linternas | Las 4 linternas de piedra encienden su llama (material emisivo, visible refractada a través del vidrio) y las 2 linternas de papel del alero se iluminan. Cada una agrega una luz puntual cálida que ilumina el entorno. |
+| Fuente | El nivel del agua sube, aparecen ondas circulares animadas (perturbación de la normal) y chorros de gotas que caen del cuenco superior. Con más agua se ven mejor las monedas refractadas en el fondo. |
+| Puerta | Las dos hojas giran sobre sus bisagras hacia adentro y dejan ver el altar dorado iluminado por velas. |
 
 ![Todo activo](capturas/06_todo_activo.png)
+
+## Estaciones y ciclo de día y noche
+
+![Las cuatro estaciones](capturas/07_estaciones.png)
+
+**Día y noche** (`src/ambiente.rs`). Con `N` el tiempo avanza (un día
+dura 2 minutos) y con `,` / `.` se mueve la hora a mano. El HUD muestra la
+estación y la hora.
+
+- El **sol** recorre un arco real: sale detrás del templo (del lado del
+  monte Fuji) a las 6:00, pasa por delante del templo al mediodía y se
+  pone hacia la entrada del jardín a las 18:00. La **luna** va del lado
+  opuesto.
+- La luz principal es el sol de día y la luna de noche, con su color
+  (blanco al mediodía, naranja al atardecer, azulado a la luz de luna) y
+  sus sombras.
+- Hay **4 skyboxes** (amanecer, día, atardecer y noche con estrellas y
+  vía láctea) que se mezclan según la hora. El sol y la luna no están
+  pintados en las imágenes: se dibujan al trazar, en su posición real,
+  así también se reflejan en el agua.
+- La luz ambiente y la exposición cambian con la hora; de noche lucen las
+  linternas, el interior del templo detrás del papel shoji y las
+  luciérnagas.
+
+**Estaciones.** Con `C` se pasa a la siguiente; la escena se reconstruye
+con la paleta de cada una:
+
+| Estación | Cambios |
+|---|---|
+| Primavera | sakura en flor, arces verde claro, azaleas, pétalos que caen y alfombra de pétalos |
+| Verano | follaje verde intenso, hortensias, pasto más verde, luciérnagas de noche |
+| Otoño | arces rojos y sakura anaranjado, pasto seco, hojarasca en el suelo y hojas que caen |
+| Invierno | nieve en techos, suelo, rocas y pinos; árboles sin hojas; estanque congelado (hielo que refleja y refracta); nieve que cae |
+
+El sol sube más en verano que en invierno. Las partículas (pétalos, hojas,
+copos, luciérnagas) se mueven mientras el tiempo avanza.
+
+![Noche de verano](capturas/08_noche_verano.png)
+
+![Estanque congelado](capturas/09_invierno_hielo.png)
 
 ## Técnicas de raytracing
 
@@ -100,7 +139,7 @@ Explorar el jardín → tocar la CAMPANA (B)
   tiene posición, rotación y escala propias; el rayo se lleva a su
   espacio local para intersectarlo.
 - **Iluminación**: ambiente de hemisferio + difusa (Lambert) + especular
-  (Blinn-Phong), sol direccional con **rayos de sombra** (los objetos
+  (Blinn-Phong), sol o luna como luz direccional con **rayos de sombra** (los objetos
   transparentes dejan pasar parte de la luz) y luces puntuales con radio
   de alcance.
 - **Reflexión**: rayo secundario en la dirección `r = d - 2(d·n)n`.
@@ -114,9 +153,10 @@ Explorar el jardín → tocar la CAMPANA (B)
   (techo).
 - **Relieve**: perturbación de la normal para las tejas y para las
   ondas del agua (estanque y fuente).
-- **Skybox**: cubemap de 6 imágenes (`assets/skybox`), atardecer con
-  sol, nubes, estrellas, montañas y el monte Fuji detrás del templo. La
-  dirección del sol del cielo es la misma que la de la luz principal.
+- **Skybox**: 4 cubemaps de 6 imágenes (`assets/skybox/<momento>`) con
+  nubes, estrellas, montañas y el monte Fuji detrás del templo, mezclados
+  según la hora, más el sol y la luna dibujados en su dirección real (la
+  misma que la de la luz principal).
 
 ### Materiales principales
 
@@ -132,8 +172,9 @@ Cada material tiene textura propia y parámetros propios (`src/material.rs`):
 
 Variantes de apoyo: laca bermellón y negra, madera oscura, oro, tejas
 (`roof_tiles.png`), yeso y papel shoji translúcido (`paper.png`), pasto,
-grava rastrillada, corteza, follaje (pino, arce, sakura, azalea), koi,
-llama emisiva.
+grava rastrillada, corteza, follaje (pino, arce, sakura, azalea,
+hortensia), koi, llama emisiva, luciérnaga emisiva y, en invierno,
+**nieve** (`snow.png`) y **hielo** (`ice.png`, transparencia 0.62, IOR 1.31).
 
 ![Estanque](capturas/03_estanque_reflejos.png)
 
@@ -190,13 +231,15 @@ puente dando profundidad. La vegetación queda en los bordes.
 - Render en paralelo por bloques de filas (`std::thread::scope`, sin
   crates extra).
 - **Resolución progresiva**: 320×200 mientras la cámara se mueve o hay
-  animaciones grandes, 512×320 mientras solo se anima el agua y 880×550
-  cuando todo está quieto (se dibuja una vez y se reutiliza).
+  animaciones grandes, 512×320 mientras solo se anima el agua o avanza el
+  ciclo de día y noche, y 880×550 cuando todo está quieto (se dibuja una
+  vez y se reutiliza).
 - La escena estática (~6500 primitivas, la mayoría triángulos del techo)
-  se arma una sola vez; solo se reconstruye la parte dinámica (~80
-  objetos).
+  se arma al arrancar y al cambiar de estación; en cada cambio de estado
+  solo se reconstruye la parte dinámica (~80 a 140 objetos con las
+  partículas).
 - En un procesador de 12 hilos lógicos: ~110–330 ms la imagen en alta,
-  y ~20–55 ms la previa (320×200).
+  y ~20–60 ms la previa (320×200).
 
 ## Estructura
 
@@ -209,10 +252,11 @@ src/
 ├── bvh.rs             BVH: impacto más cercano y rayos de sombra
 ├── material.rs        materiales
 ├── textura.rs         carga y muestreo de texturas
-├── skybox.rs          cubemap y dirección del sol
+├── skybox.rs          cubemaps del cielo
+├── ambiente.rs        estaciones, recorrido del sol, luz según la hora
 ├── camara.rs          cámara orbital, vistas predefinidas
 ├── render.rs          trazado recursivo, luces, reflexión, refracción
-├── interaccion.rs     estado, progresión y animaciones
+├── interaccion.rs     estado de las interacciones y animaciones
 ├── ruido.rs           ruido procedural (para generar assets)
 ├── generador.rs       genera texturas y skybox en PNG
 ├── escena/
@@ -220,12 +264,13 @@ src/
 │   ├── templo.rs      el templo
 │   ├── techo.rs       generador de techos curvos
 │   └── jardin.rs      terreno, estanque, puente, torii, campanario,
-│                      fuente, linternas, vegetación
+│                      fuente, linternas, vegetación, partículas
 └── bin/
     ├── generar_texturas.rs
     └── captura.rs
 assets/
 ├── textures/          wood, stone, metal, water, glass, roof_tiles,
-│                      paper, leaves, grass, gravel, bark (.png)
-└── skybox/            px, nx, py, ny, pz, nz (.png)
+│                      paper, leaves, grass, gravel, bark, snow, ice (.png)
+└── skybox/            amanecer/, dia/, atardecer/, noche/
+                       cada una con px, nx, py, ny, pz, nz (.png)
 ```
