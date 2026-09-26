@@ -6,6 +6,7 @@
 // camara se mueve se renderiza chico, y cuando se queda quieta se hace
 // una pasada en alta resolucion.
 
+use diorama_templo::ambiente;
 use diorama_templo::camara::Camara;
 use diorama_templo::escena::Escena;
 use diorama_templo::figuras::Interactivo;
@@ -60,7 +61,7 @@ fn main() {
 
     let recursos = Recursos {
         texturas: Texturas::cargar_todas().expect("no se pudieron cargar las texturas"),
-        skybox: Skybox::cargar().expect("no se pudo cargar el skybox"),
+        cielos: Skybox::cargar_todos().expect("no se pudo cargar el skybox"),
     };
 
     // igual que en los proyectos anteriores: con pantallas escaladas de
@@ -195,6 +196,23 @@ fn main() {
         if rl.is_key_pressed(KeyboardKey::KEY_R) {
             camara = Camara::vista_general();
         }
+        // ambiente: estacion, ciclo dia/noche y hora a mano
+        let mut cambio_ambiente = false;
+        if rl.is_key_pressed(KeyboardKey::KEY_C) {
+            estado.cambiar_estacion();
+            cambio_ambiente = true;
+        }
+        if rl.is_key_pressed(KeyboardKey::KEY_N) {
+            estado.alternar_ciclo();
+        }
+        if rl.is_key_down(KeyboardKey::KEY_PERIOD) {
+            estado.mover_hora(3.0 * dt);
+            cambio_ambiente = true;
+        }
+        if rl.is_key_down(KeyboardKey::KEY_COMMA) {
+            estado.mover_hora(-3.0 * dt);
+            cambio_ambiente = true;
+        }
         if rl.is_key_pressed(KeyboardKey::KEY_H) {
             ayuda = !ayuda;
         }
@@ -247,12 +265,12 @@ fn main() {
         if clic && bajo_mouse != Interactivo::Ninguno {
             accion = Some(bajo_mouse);
         }
-        let mut cambio_estado = false;
+        let mut cambio_estado = cambio_ambiente;
         if let Some(a) = accion {
             cambio_estado = estado.interactuar(a);
         }
 
-        let (animando, solo_agua) = estado.actualizar(dt);
+        let (animando, suave) = estado.actualizar(dt);
         if animando || cambio_estado {
             escena.actualizar(&estado);
         }
@@ -263,7 +281,7 @@ fn main() {
         let camara_movida = camara != camara_antes;
         let nivel = if primer_frame {
             Some(0)
-        } else if camara_movida || (animando && !solo_agua) || cambio_estado {
+        } else if camara_movida || (animando && !suave) || cambio_estado {
             Some(0)
         } else if animando {
             Some(1)
@@ -333,28 +351,17 @@ fn dibujar_hud(
     let claro = Color::new(235, 230, 225, 255);
     let gris = Color::new(170, 165, 175, 255);
 
-    // titulo y objetivo
-    panel(d, 10, 10, 470, 56);
-    d.draw_text("Templo japones - diorama con raytracing", 20, 18, 20, dorado);
-    d.draw_text(estado.objetivo(), 20, 42, 16, claro);
-
-    // estado de las interacciones
-    let filas = [
-        (Interactivo::Campana, if estado.t_campana < 7.0 { "sonando" } else if estado.campana_activada { "tocada" } else { "en silencio" }, "B"),
-        (Interactivo::Linterna, if estado.linternas_encendidas { "encendidas" } else { "apagadas" }, "L"),
-        (Interactivo::Fuente, if estado.fuente_activa { "activa" } else { "detenida" }, "F"),
-        (Interactivo::Puerta, if estado.puerta_abierta { "abierta" } else { "cerrada" }, "T"),
-    ];
-    let px = w - 260;
-    panel(d, px, 10, 250, 26 + 22 * filas.len() as i32);
-    d.draw_text("Recorrido", px + 10, 16, 18, dorado);
-    for (k, (que, texto, tecla)) in filas.iter().enumerate() {
-        let y = 40 + 22 * k as i32;
-        let libre = estado.desbloqueado(*que);
-        let color = if libre { claro } else { gris };
-        let marca = if libre { format!("[{tecla}]") } else { "[x]".to_string() };
-        d.draw_text(&format!("{marca} {}: {}", nombre(*que), if libre { texto } else { "bloqueado" }), px + 10, y, 16, color);
-    }
+    // estacion y hora
+    let a = &estado.ambiente;
+    let tiempo = format!(
+        "{}  -  {}  ({})",
+        a.estacion.nombre(),
+        ambiente::formato_hora(a.hora),
+        if a.ciclo_activo { "el tiempo avanza" } else { "tiempo en pausa" }
+    );
+    let ancho_tiempo = d.measure_text(&tiempo, 18) + 20;
+    panel(d, 10, 10, ancho_tiempo, 30);
+    d.draw_text(&tiempo, 20, 16, 18, Color::new(160, 200, 240, 255));
 
     // controles
     if ayuda {
@@ -363,6 +370,7 @@ fn dibujar_hud(
             "Rueda o +/-: zoom      WASD: mover   Q/Z: subir/bajar",
             "Clic sobre un objeto o E (centro): interactuar",
             "B campana  L linternas  F fuente  T puerta",
+            "C estacion   N ciclo dia/noche   , . cambiar la hora",
             "1-5 vistas   R reiniciar camara   P captura   H ocultar ayuda",
         ];
         let alto = 12 + 20 * lineas.len() as i32;
@@ -390,11 +398,7 @@ fn dibujar_hud(
 
     // nombre del objeto bajo el mouse
     if bajo_mouse != Interactivo::Ninguno {
-        let texto = if estado.desbloqueado(bajo_mouse) {
-            format!("clic: {}", nombre(bajo_mouse))
-        } else {
-            format!("{} (bloqueado)", nombre(bajo_mouse))
-        };
+        let texto = format!("clic: {}", nombre(bajo_mouse));
         let x = mouse.x as i32 + 16;
         let y = mouse.y as i32 + 12;
         let ancho = d.measure_text(&texto, 16) + 12;

@@ -1,9 +1,7 @@
-// estado de las interacciones del diorama y sus animaciones.
-//
-// la progresion es lineal: cada interaccion se desbloquea al completar la
-// anterior (campana -> linternas -> fuente -> puerta). una vez
-// desbloqueada, se puede usar las veces que se quiera.
+// estado de las interacciones del diorama y sus animaciones. todas las
+// interacciones estan disponibles desde el inicio y en cualquier orden.
 
+use crate::ambiente::{Ambiente, DURACION_DIA};
 use crate::figuras::Interactivo;
 use crate::matematica::suavizar;
 
@@ -18,9 +16,6 @@ pub struct EstadoDiorama {
     pub fuente_activa: bool,
     pub puerta_abierta: bool,
 
-    // 0 = tocar la campana, 1 = linternas, 2 = fuente, 3 = puerta, 4 = fin
-    pub etapa: u8,
-
     // animaciones
     pub t_campana: f32,
     pub apertura_puerta: f32, // 0 cerrada .. 1 abierta
@@ -29,6 +24,9 @@ pub struct EstadoDiorama {
 
     pub mensaje: String,
     pub t_mensaje: f32,
+
+    // hora del dia, estacion y ciclo dia/noche
+    pub ambiente: Ambiente,
 }
 
 impl Default for EstadoDiorama {
@@ -38,18 +36,36 @@ impl Default for EstadoDiorama {
             linternas_encendidas: false,
             fuente_activa: false,
             puerta_abierta: false,
-            etapa: 0,
             t_campana: DURACION_CAMPANA,
             apertura_puerta: 0.0,
             nivel_fuente: 0.0,
             tiempo: 0.0,
-            mensaje: String::from("Bienvenido al templo. Explora el jardin y busca la campana (B)."),
+            mensaje: String::from("Bienvenido al templo. Explora el jardin libremente."),
             t_mensaje: 6.0,
+            ambiente: Ambiente::default(),
         }
     }
 }
 
 impl EstadoDiorama {
+    // --- ambiente: estacion y hora ---
+
+    pub fn cambiar_estacion(&mut self) {
+        self.ambiente.estacion = self.ambiente.estacion.siguiente();
+        let texto = format!("Llega {}.", self.ambiente.estacion.nombre().to_lowercase());
+        self.avisar(&texto);
+    }
+
+    pub fn alternar_ciclo(&mut self) {
+        self.ambiente.ciclo_activo = !self.ambiente.ciclo_activo;
+        self.avisar(if self.ambiente.ciclo_activo { "El tiempo avanza: ciclo de dia y noche." } else { "Tiempo en pausa." });
+    }
+
+    // adelanta o atrasa la hora (horas, puede ser negativo)
+    pub fn mover_hora(&mut self, horas: f32) {
+        self.ambiente.hora = (self.ambiente.hora + horas).rem_euclid(24.0);
+    }
+
     fn avisar(&mut self, texto: &str) {
         self.mensaje = texto.to_string();
         self.t_mensaje = 4.5;
@@ -62,98 +78,30 @@ impl EstadoDiorama {
             Interactivo::Campana => {
                 self.t_campana = 0.0;
                 self.campana_activada = true;
-                if self.etapa == 0 {
-                    self.etapa = 1;
-                    self.avisar("La campana resuena en el jardin... Enciende las linternas (L).");
-                } else {
-                    self.avisar("Gooong... la campana vuelve a sonar.");
-                }
+                self.avisar("Gooong... la campana resuena en el jardin.");
                 true
             }
             Interactivo::Linterna => {
-                if self.etapa < 1 {
-                    self.avisar("Las linternas no responden. Primero haz sonar la campana (B).");
-                    return false;
-                }
                 self.linternas_encendidas = !self.linternas_encendidas;
-                if self.linternas_encendidas {
-                    if self.etapa == 1 {
-                        self.etapa = 2;
-                        self.avisar("Las linternas iluminan el camino. Activa la fuente (F).");
-                    } else {
-                        self.avisar("Linternas encendidas.");
-                    }
-                } else {
-                    self.avisar("Linternas apagadas.");
-                }
+                self.avisar(if self.linternas_encendidas { "Linternas encendidas." } else { "Linternas apagadas." });
                 true
             }
             Interactivo::Fuente => {
-                if self.etapa < 2 {
-                    self.avisar(if self.etapa == 0 {
-                        "La fuente esta seca. Primero haz sonar la campana (B)."
-                    } else {
-                        "La fuente esta seca. Primero enciende las linternas (L)."
-                    });
-                    return false;
-                }
                 self.fuente_activa = !self.fuente_activa;
-                if self.fuente_activa {
-                    if self.etapa == 2 {
-                        self.etapa = 3;
-                        self.avisar("El agua fluye. Ahora abre la puerta del templo (T).");
-                    } else {
-                        self.avisar("La fuente vuelve a fluir.");
-                    }
-                } else {
-                    self.avisar("La fuente se detiene.");
-                }
+                self.avisar(if self.fuente_activa { "El agua de la fuente fluye." } else { "La fuente se detiene." });
                 true
             }
             Interactivo::Puerta => {
-                if self.etapa < 3 {
-                    self.avisar("La puerta esta sellada. Completa los pasos anteriores.");
-                    return false;
-                }
                 self.puerta_abierta = !self.puerta_abierta;
-                if self.puerta_abierta {
-                    if self.etapa == 3 {
-                        self.etapa = 4;
-                        self.avisar("La puerta se abre y revela el altar. Recorrido completo!");
-                    } else {
-                        self.avisar("La puerta se abre.");
-                    }
-                } else {
-                    self.avisar("La puerta se cierra.");
-                }
+                self.avisar(if self.puerta_abierta { "La puerta se abre y revela el altar." } else { "La puerta se cierra." });
                 true
             }
         }
     }
 
-    pub fn objetivo(&self) -> &'static str {
-        match self.etapa {
-            0 => "Objetivo: encuentra la campana y hazla sonar (B)",
-            1 => "Objetivo: enciende las linternas (L)",
-            2 => "Objetivo: sigue el camino y activa la fuente (F)",
-            3 => "Objetivo: abre la puerta del templo (T)",
-            _ => "Recorrido completo. Explora libremente",
-        }
-    }
-
-    pub fn desbloqueado(&self, que: Interactivo) -> bool {
-        match que {
-            Interactivo::Campana => true,
-            Interactivo::Linterna => self.etapa >= 1,
-            Interactivo::Fuente => self.etapa >= 2,
-            Interactivo::Puerta => self.etapa >= 3,
-            Interactivo::Ninguno => false,
-        }
-    }
-
-    // avanza las animaciones. devuelve (hubo_cambio, solo_agua): si solo
-    // se esta moviendo el agua de la fuente se puede renderizar con mas
-    // calidad que durante movimientos grandes
+    // avanza las animaciones. devuelve (hubo_cambio, suave): "suave" es
+    // cuando solo se mueven el agua, el cielo o las particulas; ahi se
+    // puede renderizar con mas calidad que durante movimientos grandes
     pub fn actualizar(&mut self, dt: f32) -> (bool, bool) {
         let dt = dt.min(0.1);
         self.t_mensaje = (self.t_mensaje - dt).max(0.0);
@@ -190,7 +138,15 @@ impl EstadoDiorama {
         if agua {
             self.tiempo += dt;
         }
-        (transitorio || agua, agua && !transitorio)
+
+        let ciclo = self.ambiente.ciclo_activo;
+        if ciclo {
+            self.mover_hora(dt * 24.0 / DURACION_DIA);
+            self.ambiente.t_particulas += dt;
+        }
+
+        let suave = agua || ciclo;
+        (transitorio || suave, suave && !transitorio)
     }
 
     // --- valores de la animacion de la campana ---
@@ -236,35 +192,18 @@ mod pruebas {
     use super::*;
 
     #[test]
-    fn progresion_en_orden() {
+    fn cualquier_orden() {
         let mut e = EstadoDiorama::default();
-        // nada se puede usar antes de tocar la campana
-        assert!(!e.interactuar(Interactivo::Linterna));
-        assert!(!e.interactuar(Interactivo::Fuente));
-        assert!(!e.interactuar(Interactivo::Puerta));
-        assert!(!e.linternas_encendidas && !e.fuente_activa && !e.puerta_abierta);
-
-        assert!(e.interactuar(Interactivo::Campana));
-        assert_eq!(e.etapa, 1);
-        assert!(!e.interactuar(Interactivo::Fuente));
+        // la puerta y la fuente funcionan sin tocar antes la campana
+        assert!(e.interactuar(Interactivo::Puerta));
+        assert!(e.puerta_abierta);
+        assert!(e.interactuar(Interactivo::Fuente));
+        assert!(e.fuente_activa);
         assert!(e.interactuar(Interactivo::Linterna));
         assert!(e.linternas_encendidas);
-        assert!(!e.interactuar(Interactivo::Puerta));
-        assert!(e.interactuar(Interactivo::Fuente));
-        assert!(e.interactuar(Interactivo::Puerta));
-        assert_eq!(e.etapa, 4);
-        assert!(e.puerta_abierta);
-    }
-
-    #[test]
-    fn desbloqueo_permanente() {
-        let mut e = EstadoDiorama::default();
-        e.interactuar(Interactivo::Campana);
-        e.interactuar(Interactivo::Linterna);
-        // apagar las linternas no vuelve a bloquear la fuente
-        e.interactuar(Interactivo::Linterna);
-        assert!(!e.linternas_encendidas);
-        assert!(e.interactuar(Interactivo::Fuente));
+        // y se pueden volver a apagar/cerrar
+        e.interactuar(Interactivo::Puerta);
+        assert!(!e.puerta_abierta);
     }
 
     #[test]
