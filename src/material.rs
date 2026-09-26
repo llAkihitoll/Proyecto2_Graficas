@@ -266,3 +266,49 @@ pub const CERA: Material = Material { albedo: v3(0.95, 0.92, 0.85), especular: 0
 
 // cuerda
 pub const CUERDA: Material = Material { albedo: v3(0.75, 0.62, 0.4), ..BASE };
+
+// =====================================================================
+// materiales de las estaciones
+// =====================================================================
+
+// nieve: blanca, con un brillo suave (los cristalitos de hielo)
+pub const NIEVE: Material = Material {
+    albedo: v3(1.0, 1.0, 1.0),
+    textura: Some(TEX_NIEVE),
+    escala_uv: 0.4,
+    especular: 0.35,
+    brillo: 30.0,
+    reflectividad: 0.02,
+    ..BASE
+};
+
+// nieve sobre las tejas (conserva el relieve de las tejas debajo)
+pub const NIEVE_TECHO: Material = Material { escala_uv: 0.5, ..NIEVE };
+
+// hielo del estanque en invierno: menos transparente que el agua y con
+// ior 1.31. deja ver (refractados y borrosos) a los koi de abajo
+pub const HIELO: Material = Material {
+    albedo: v3(1.0, 1.0, 1.0),
+    textura: Some(TEX_HIELO),
+    escala_uv: 0.3,
+    especular: 1.0,
+    brillo: 200.0,
+    reflectividad: 0.1,
+    transparencia: 0.62,
+    ior: 1.31,
+    absorcion: v3(0.3, 0.14, 0.08),
+    ..BASE
+};
+
+pub const HOJAS_ARCE_VERDE: Material = Material { albedo: v3(0.62, 0.9, 0.35), ..FOLLAJE };
+pub const HOJAS_VERANO: Material = Material { albedo: v3(0.32, 0.62, 0.28), ..FOLLAJE };
+pub const HOJAS_OTONO: Material = Material { albedo: v3(1.2, 0.62, 0.15), ..FOLLAJE };
+pub const HORTENSIA: Material = Material { albedo: v3(0.72, 0.66, 1.05), ..FOLLAJE };
+pub const PETALO: Material = Material { albedo: v3(1.25, 0.75, 0.88), ..FOLLAJE };
+
+// luciernagas de las noches de verano
+pub const LUCIERNAGA: Material = Material {
+    albedo: v3(0.8, 1.0, 0.3),
+    emision: v3(1.6, 2.0, 0.5),
+    ..BASE
+};
