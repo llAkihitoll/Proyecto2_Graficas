@@ -3,6 +3,7 @@
 // guardar imagenes PNG; todo el trazado de rayos esta escrito aca.
 
 pub mod generador;
+pub mod material;
 pub mod matematica;
 pub mod ruido;
 pub mod skybox;
