@@ -6,13 +6,14 @@
 //   - refraccion: un rayo secundario que atraviesa la superficie y se
 //     desvia segun la ley de Snell (agua, vidrio)
 // y se mezclan segun los parametros del material y el termino de Fresnel.
-// si un rayo no choca con nada, toma el color del skybox.
+// si un rayo no choca con nada, toma el color del skybox (mezcla de dos
+// momentos del dia) mas el sol y la luna en su posicion real.
 
 use crate::bvh::desplazar;
 use crate::camara::Vista;
 use crate::escena::Escena;
 use crate::figuras::{Impacto, Interactivo, Rayo, Relieve};
-use crate::matematica::{reflejar, refractar, schlick, v3, Vec3};
+use crate::matematica::{reflejar, refractar, schlick, suavizar, v3, Vec3};
 use crate::skybox::Skybox;
 use crate::textura::Texturas;
 use std::f32::consts::PI;
@@ -22,13 +23,10 @@ const MAX_PROF: u32 = 5;
 // si la contribucion de un rayo secundario al pixel es menor, no se traza
 const PESO_MIN: f32 = 0.02;
 
-const COLOR_SOL: Vec3 = v3(1.35, 0.95, 0.66);
-const AMB_CIELO: Vec3 = v3(0.22, 0.19, 0.30);
-const AMB_SUELO: Vec3 = v3(0.12, 0.09, 0.07);
-
 pub struct Recursos {
     pub texturas: Texturas,
-    pub skybox: Skybox,
+    // un skybox por momento del dia (ver ambiente.rs)
+    pub cielos: Vec<Skybox>,
 }
 
 // luz puntual (linternas, altar). "radio" es hasta donde alcanza: afuera
@@ -65,7 +63,7 @@ impl<'a> Ctx<'a> {
     fn trazar(&self, r: &Rayo, prof: u32, peso: f32, medio: Option<Vec3>) -> Vec3 {
         let imp = match self.intersectar(r, f32::INFINITY) {
             Some(i) => i,
-            None => return self.rec.skybox.muestrear(r.dir),
+            None => return self.cielo(r.dir),
         };
 
         let color = self.sombrear(r, &imp, prof, peso, medio);
@@ -76,6 +74,45 @@ impl<'a> Ctx<'a> {
             Some(abs) => color.mul(v3((-abs.x * imp.t).exp(), (-abs.y * imp.t).exp(), (-abs.z * imp.t).exp())),
             None => color,
         }
+    }
+
+    // color del cielo en la direccion d
+    fn cielo(&self, d: Vec3) -> Vec3 {
+        let il = &self.escena.luz;
+        let (a, b, t) = il.mezcla;
+        let mut c = if t < 0.001 {
+            self.rec.cielos[a].muestrear(d)
+        } else if t > 0.999 {
+            self.rec.cielos[b].muestrear(d)
+        } else {
+            self.rec.cielos[a].muestrear(d).lerp(self.rec.cielos[b].muestrear(d), t)
+        };
+        // el sol y la luna se esconden detras del horizonte
+        let sobre_horizonte = suavizar(-0.01, 0.02, d.y);
+        if sobre_horizonte <= 0.0 {
+            return c;
+        }
+
+        // sol: disco brillante y halo del color de su luz
+        let cs = d.dot(il.sol_dir);
+        if cs > 0.0 {
+            let visible = suavizar(-0.03, 0.03, il.sol_dir.y) * sobre_horizonte;
+            let disco = suavizar(0.9993, 0.9996, cs);
+            let halo = il.sol_color * (cs.powf(60.0) * 0.4 + cs.powf(600.0) * 0.8);
+            c += (v3(1.7, 1.5, 1.2) * disco + halo) * visible;
+        }
+
+        // luna: disco palido con halo azulado, mas notoria de noche
+        let cl = d.dot(il.luna_dir);
+        if cl > 0.0 {
+            let visible = il.luna_visible * (0.35 + 0.65 * il.noche) * sobre_horizonte;
+            let disco = suavizar(0.99955, 0.9998, cl);
+            // manchas (mares lunares) con un patron simple
+            let p = d - il.luna_dir;
+            let manchas = 1.0 - 0.18 * (((p.x * 900.0).sin() * (p.z * 700.0 + p.y * 500.0).cos()) * 0.5 + 0.5);
+            c += (v3(1.1, 1.1, 1.2) * (disco * manchas) + v3(0.3, 0.35, 0.5) * (cl.powf(400.0) * 0.4)) * visible;
+        }
+        c
     }
 
     fn sombrear(&self, r: &Rayo, imp: &Impacto, prof: u32, peso: f32, medio: Option<Vec3>) -> Vec3 {
@@ -153,7 +190,7 @@ impl<'a> Ctx<'a> {
 
         if prof >= MAX_PROF {
             // sin rebotes: aproximamos lo que faltaba con el cielo
-            return color + self.rec.skybox.muestrear(reflejar(d, n)) * (peso_refl + peso_refr) * 0.5;
+            return color + self.cielo(reflejar(d, n)) * (peso_refl + peso_refr) * 0.5;
         }
 
         // ---------- reflexion ----------
@@ -188,20 +225,20 @@ impl<'a> Ctx<'a> {
 
         // luz ambiente de "hemisferio": las caras que miran al cielo
         // reciben mas luz violeta, las que miran al piso un rebote calido
-        let mut ambiente = AMB_SUELO.lerp(AMB_CIELO, n.y * 0.5 + 0.5);
+        let mut ambiente = escena.luz.amb_suelo.lerp(escena.luz.amb_cielo, n.y * 0.5 + 0.5);
         if escena.interior.contiene(p, 0.0) {
             ambiente *= 0.3; // adentro del templo casi no entra luz del cielo
         }
         let mut difusa = base.mul(ambiente);
         let mut especular = Vec3::CERO;
 
-        // sol (luz direccional con sombra)
-        let l = escena.dir_sol;
+        // sol o luna (luz direccional con sombra)
+        let l = escena.luz.luz_dir;
         let ndl = n.dot(l);
-        if ndl > 0.0 {
+        if ndl > 0.0 && escena.luz.luz_color.luminancia() > 1e-3 {
             let tr = self.transmision(&Rayo::nuevo(p, l), f32::INFINITY);
             if tr > 0.0 {
-                let luz = COLOR_SOL * tr;
+                let luz = escena.luz.luz_color * tr;
                 difusa += base.mul(luz) * ndl;
                 let h = (l - d).normalizado();
                 especular += luz * (m.especular * n.dot(h).max(0.0).powf(m.brillo));
@@ -293,6 +330,7 @@ fn tonos(x: f32) -> u8 {
 // repartiendo bloques de filas entre todos los nucleos del procesador
 pub fn renderizar(escena: &Escena, rec: &Recursos, vista: &Vista, ancho: usize, alto: usize, buffer: &mut [u8]) {
     let ctx = Ctx { escena, rec };
+    let exposicion = escena.luz.exposicion;
     let hilos = std::thread::available_parallelism().map_or(4, |n| n.get());
     const FILAS: usize = 4;
 
@@ -310,7 +348,7 @@ pub fn renderizar(escena: &Escena, rec: &Recursos, vista: &Vista, ancho: usize, 
                         let x = k % ancho;
                         let y = fila0 + k / ancho;
                         let rayo = vista.rayo(x as f32 + 0.5, y as f32 + 0.5, ancho as f32, alto as f32);
-                        let c = ctx.trazar(&rayo, 0, 1.0, None);
+                        let c = ctx.trazar(&rayo, 0, 1.0, None) * exposicion;
                         pixel[0] = tonos(c.x);
                         pixel[1] = tonos(c.y);
                         pixel[2] = tonos(c.z);
