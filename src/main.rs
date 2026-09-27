@@ -80,7 +80,7 @@ fn main() {
 
     // audio: si no hay dispositivo de sonido el diorama igual funciona
     let audio = RaylibAudio::init_audio_device().ok();
-    let sonidos = audio.as_ref().and_then(|a| match Sonidos::cargar(a) {
+    let mut sonidos = audio.as_ref().and_then(|a| match Sonidos::cargar(a) {
         Ok(s) => Some(s),
         Err(e) => {
             eprintln!("sin sonido: {e}");
@@ -223,6 +223,16 @@ fn main() {
         if rl.is_key_down(KeyboardKey::KEY_COMMA) {
             estado.mover_hora(-3.0 * dt);
             cambio_ambiente = true;
+        }
+        if rl.is_key_pressed(KeyboardKey::KEY_M) {
+            if let Some(s) = sonidos.as_mut() {
+                if s.hay_musica() {
+                    s.alternar_musica();
+                    estado_mensaje(&mut estado, if s.musica_activa() { "Musica activada." } else { "Musica en silencio." });
+                } else {
+                    estado_mensaje(&mut estado, "No hay musica: pon un archivo fondo.mp3 en assets/music.");
+                }
+            }
         }
         if rl.is_key_pressed(KeyboardKey::KEY_H) {
             ayuda = !ayuda;
@@ -390,7 +400,7 @@ fn dibujar_hud(
             "Rueda o +/-: zoom      WASD: mover   Q/Z: subir/bajar",
             "Clic sobre un objeto o E (centro): interactuar",
             "B campana  L linternas  F fuente  T puerta",
-            "C estacion   N ciclo dia/noche   , . cambiar la hora",
+            "C estacion   N ciclo dia/noche   , . cambiar la hora   M musica",
             "1-5 vistas   R reiniciar camara   P captura   H ocultar ayuda",
         ];
         let alto = 12 + 20 * lineas.len() as i32;

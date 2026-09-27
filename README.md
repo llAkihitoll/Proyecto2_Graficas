@@ -69,6 +69,7 @@ cargo test --release
 | Cambiar de estación | `C` |
 | Pausar / reanudar el ciclo de día y noche | `N` |
 | Atrasar / adelantar la hora (mantener) | `,` / `.` |
+| Silenciar / activar la música de fondo | `M` |
 | Vistas predefinidas | `1` general, `2` templo, `3` estanque, `4` techo, `5` patio |
 | Reiniciar cámara | `R` |
 | Captura de pantalla (`captura.png`) | `P` |
@@ -126,6 +127,18 @@ inarmónicos que decaen, con pares apenas desafinados que producen la
 pulsación típica, más el golpe del mazo. El programa solo sintetiza los
 `.wav` que falten; para cambiar un sonido basta con reemplazar el archivo
 con el mismo nombre.
+
+### Música de fondo
+
+Suena en loop a volumen bajo *Erev Shel Shoshanim* de E's Jammy Jams
+(`assets/music/fondo.mp3`, de la Biblioteca de audio de YouTube); con `M`
+se silencia o se vuelve a activar.
+
+Al cargarla, el programa detecta dónde empieza y dónde termina realmente
+el sonido (esta pista trae casi 9 s de silencio al final) y repite solo
+ese tramo, así no queda un hueco mudo en cada vuelta. Se puede cambiar
+por otra canción reemplazando el archivo (sirve `.mp3`, `.ogg` o `.wav`);
+si no hay archivo, el diorama funciona igual sin música.
 
 ![Todo activo](capturas/06_todo_activo.png)
 
