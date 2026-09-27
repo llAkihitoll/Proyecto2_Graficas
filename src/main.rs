@@ -14,6 +14,7 @@ use diorama_templo::generador;
 use diorama_templo::interaccion::EstadoDiorama;
 use diorama_templo::render::{self, Recursos};
 use diorama_templo::skybox::Skybox;
+use diorama_templo::sonido::Sonidos;
 use diorama_templo::textura::Texturas;
 use raylib::prelude::*;
 use std::time::Instant;
@@ -76,6 +77,16 @@ fn main() {
         .resizable()
         .build();
     rl.set_target_fps(60);
+
+    // audio: si no hay dispositivo de sonido el diorama igual funciona
+    let audio = RaylibAudio::init_audio_device().ok();
+    let sonidos = audio.as_ref().and_then(|a| match Sonidos::cargar(a) {
+        Ok(s) => Some(s),
+        Err(e) => {
+            eprintln!("sin sonido: {e}");
+            None
+        }
+    });
 
     let mut lienzos: Vec<Lienzo> = CALIDADES
         .iter()
@@ -267,10 +278,19 @@ fn main() {
         }
         let mut cambio_estado = cambio_ambiente;
         if let Some(a) = accion {
-            cambio_estado = estado.interactuar(a);
+            let cambio = estado.interactuar(a);
+            if cambio {
+                if let Some(s) = &sonidos {
+                    s.reproducir(a, &estado, &camara);
+                }
+            }
+            cambio_estado |= cambio;
         }
 
         let (animando, suave) = estado.actualizar(dt);
+        if let Some(s) = &sonidos {
+            s.actualizar(&estado, &camara);
+        }
         if animando || cambio_estado {
             escena.actualizar(&estado);
         }

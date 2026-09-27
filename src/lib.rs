@@ -8,12 +8,14 @@ pub mod camara;
 pub mod escena;
 pub mod figuras;
 pub mod generador;
+pub mod generador_sonidos;
 pub mod interaccion;
 pub mod material;
 pub mod matematica;
 pub mod render;
 pub mod ruido;
 pub mod skybox;
+pub mod sonido;
 pub mod textura;
 
 // raylib imprime una linea por cada archivo que carga o guarda; dejamos

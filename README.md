@@ -4,7 +4,8 @@ Diorama 3D de un jardín japonés con un templo de dos niveles como punto
 focal, con **ciclo de día y noche** y **las cuatro estaciones**,
 renderizado **con un raytracer propio escrito en Rust**.
 [raylib](https://www.raylib.com/) solo se usa para abrir la ventana, leer
-el teclado/mouse y leer/guardar imágenes PNG: la intersección de rayos,
+el teclado/mouse, leer/guardar imágenes PNG y reproducir audio: la
+intersección de rayos,
 materiales, texturas, luces, sombras, reflexión, refracción y skybox
 están implementados a mano.
 
@@ -22,9 +23,9 @@ están implementados a mano.
 cargo run --release
 ```
 
-La primera vez se generan las texturas (`assets/textures`) y los 4
-skyboxes (`assets/skybox`) si no existen (tarda unos 10 segundos). Para
-regenerarlos:
+La primera vez se generan las texturas (`assets/textures`), los 4
+skyboxes (`assets/skybox`) y los sonidos (`assets/sounds`) si no existen
+(tarda unos 10 segundos). Para regenerarlos:
 
 ```
 cargo run --release --bin generar_texturas
@@ -86,6 +87,34 @@ usar en cualquier orden y las veces que se quiera.
 | Linternas | Las 4 linternas de piedra encienden su llama (material emisivo, visible refractada a través del vidrio) y las 2 linternas de papel del alero se iluminan. Cada una agrega una luz puntual cálida que ilumina el entorno. |
 | Fuente | El nivel del agua sube, aparecen ondas circulares animadas (perturbación de la normal) y chorros de gotas que caen del cuenco superior. Con más agua se ven mejor las monedas refractadas en el fondo. |
 | Puerta | Las dos hojas giran sobre sus bisagras hacia adentro y dejan ver el altar dorado iluminado por velas. |
+
+### Sonidos
+
+Cada interacción tiene su sonido (`src/sonido.rs`), reproducido con el
+audio de raylib:
+
+| Interacción | Sonido |
+|---|---|
+| Campana | campanada grave y larga de templo, con el golpe del mazo de madera |
+| Linternas | chispa y llama que prende al encender; soplido al apagar |
+| Fuente | chorro que arranca al activarla, agua corriendo en loop mientras tiene agua (más fuerte cuanto más llena) y gorgoteo al detenerla |
+| Puerta | crujido de las bisagras al abrir; crujido y golpe seco al cerrar |
+
+El sonido es **espacial**: el volumen baja con la distancia entre la
+cámara y el objeto, y el paneo depende de si el objeto está a la
+izquierda o a la derecha de la pantalla. Si la computadora no tiene
+dispositivo de audio, el diorama funciona igual sin sonido.
+
+Los `.wav` se generan por síntesis (`src/generador_sonidos.rs`):
+
+- **Campana:** parciales inarmónicos que decaen, con pares apenas
+  desafinados que producen la pulsación típica.
+- **Linternas:** ruido filtrado para la chispa y la llama.
+- **Agua:** ruido de banda con burbujas (tonos cortos que suben).
+- **Puerta:** pulsos de fricción que excitan resonadores de madera.
+
+Como el diorama los carga desde archivo, se pueden reemplazar por
+grabaciones reales con el mismo nombre.
 
 ![Todo activo](capturas/06_todo_activo.png)
 
@@ -259,6 +288,8 @@ src/
 ├── interaccion.rs     estado de las interacciones y animaciones
 ├── ruido.rs           ruido procedural (para generar assets)
 ├── generador.rs       genera texturas y skybox en PNG
+├── generador_sonidos.rs  sintetiza los efectos de sonido en WAV
+├── sonido.rs          reproduce los sonidos con volumen y paneo según la cámara
 ├── escena/
 │   ├── mod.rs         escena estática + dinámica
 │   ├── templo.rs      el templo
@@ -271,6 +302,9 @@ src/
 assets/
 ├── textures/          wood, stone, metal, water, glass, roof_tiles,
 │                      paper, leaves, grass, gravel, bark, snow, ice (.png)
-└── skybox/            amanecer/, dia/, atardecer/, noche/
-                       cada una con px, nx, py, ny, pz, nz (.png)
+├── skybox/            amanecer/, dia/, atardecer/, noche/
+│                      cada una con px, nx, py, ny, pz, nz (.png)
+└── sounds/            campana, linterna_encender, linterna_apagar,
+                       fuente_activar, fuente_detener, fuente_agua,
+                       puerta_abrir, puerta_cerrar (.wav)
 ```

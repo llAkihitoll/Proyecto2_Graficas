@@ -434,8 +434,10 @@ fn faltan(carpeta: &str, nombres: &[&str]) -> bool {
     nombres.iter().any(|n| !Path::new(&format!("{carpeta}/{n}")).exists())
 }
 
-// genera todo lo que falte (o todo, si forzar = true)
+// genera todo lo que falte (o todo, si forzar = true): texturas, skyboxes
+// y efectos de sonido
 pub fn asegurar_assets(forzar: bool) {
+    crate::generador_sonidos::asegurar_sonidos(forzar);
     for nombre in ARCHIVOS {
         if !forzar && !faltan(CARPETA_TEXTURAS, &[nombre]) {
             continue;
