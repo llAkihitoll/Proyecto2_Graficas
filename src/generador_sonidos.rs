@@ -1,13 +1,17 @@
 // genera los efectos de sonido (assets/sounds/*.wav) por sintesis, igual
 // que las texturas: el diorama despues los CARGA desde archivo, asi que se
-// pueden reemplazar por grabaciones reales sin tocar el codigo.
+// pueden reemplazar por grabaciones reales sin tocar el codigo. solo se
+// sintetizan los que falten (hoy las linternas, la fuente y la puerta son
+// grabaciones; la campana es sintetizada).
 //
 //   campana:      suma de parciales inarmonicos que decaen (como un bonsho)
 //                 con pulsaciones, mas el golpe del mazo de madera
-//   linterna:     chispa + "fuop" de la llama al encender; soplido al apagar
-//   fuente:       chapoteo al activar, agua corriendo en loop, gorgoteo al parar
-//   puerta:       crujido de madera (friccion por pulsos + resonadores) y
-//                 golpe al cerrar
+//   linterna:     raspado del fosforo, "fshh" al encender y crepitar de la
+//                 llama; soplido y "pff" al apagar
+//   fuente:       lluvia de cientos de gotitas por segundo sobre un fondo de
+//                 ruido: el chorro arranca, corre en loop y se adelgaza al parar
+//   puerta:       pestillo, crujido de bisagra (friccion por pulsos que hace
+//                 sonar modos de madera) y golpe del panel al cerrar
 //
 // los .wav se escriben a mano (PCM de 16 bits, mono, 44.1 kHz).
 
@@ -181,119 +185,210 @@ fn campana() -> Vec<f32> {
     s
 }
 
-// encender una linterna: chispazo del fosforo y la llama que prende
-fn linterna_encender() -> Vec<f32> {
-    let n = muestras(1.1);
-    let mut az = Azar(21);
-    let mut agudo = PasaBajos::nuevo(6000.0);
-    let mut grave = PasaBajos::nuevo(500.0);
-    let mut s = vec![0.0; n];
-    for (i, x) in s.iter_mut().enumerate() {
-        let t = i as f32 / FM;
-        let r = az.sig();
-        // chispa: ruido brillante en los primeros 60 ms
-        let a = agudo.paso(r);
-        let chispa = (r - a) * (-t / 0.02).exp() * if t < 0.07 { 1.0 } else { 0.0 };
-        // la llama: un soplido grave que sube y se estabiliza
-        let fuop = grave.paso(r) * ((t - 0.05).max(0.0) / 0.12).min(1.0) * (-(t - 0.2).max(0.0) / 0.45).exp() * 3.0;
-        // chasquidos sueltos del fuego
-        let crepita = if az.uniforme() > 0.9993 { az.sig() * 0.8 } else { 0.0 };
-        *x = chispa * 0.9 + fuop + crepita * (t / 0.2).min(1.0);
+// ---------------------------------------------------------------------
+// piezas sueltas que usan varios sonidos
+// ---------------------------------------------------------------------
+
+// pasa altos de un polo (lo que el pasa bajos deja afuera)
+struct PasaAltos(PasaBajos);
+
+impl PasaAltos {
+    fn nuevo(corte: f32) -> Self {
+        PasaAltos(PasaBajos::nuevo(corte))
     }
-    normalizar(&mut s, 0.7);
-    bordes(&mut s, 0.002, 0.2);
-    s
+    fn paso(&mut self, x: f32) -> f32 {
+        x - self.0.paso(x)
+    }
 }
 
-// apagar una linterna: un soplido suave
-fn linterna_apagar() -> Vec<f32> {
-    let n = muestras(0.65);
-    let mut az = Azar(31);
-    let mut f1 = PasaBajos::nuevo(1400.0);
-    let mut f2 = PasaBajos::nuevo(1400.0);
-    let mut s = vec![0.0; n];
-    for (i, x) in s.iter_mut().enumerate() {
-        let t = i as f32 / FM;
-        let env = (t / 0.06).min(1.0) * (-(t - 0.06).max(0.0) / 0.16).exp();
-        *x = f2.paso(f1.paso(az.sig())) * env;
-    }
-    normalizar(&mut s, 0.5);
-    bordes(&mut s, 0.005, 0.1);
-    s
-}
-
-// burbuja: un tono corto que sube de frecuencia (asi suena una gota o una
-// burbuja al reventar en el agua)
-fn burbuja(s: &mut [f32], inicio: usize, f_ini: f32, dur: f32, amp: f32) {
+// gota de agua: un tono muy corto que sube rapido de frecuencia (la
+// burbujita que queda atrapada al caer la gota vibra asi). cientos de
+// estas por segundo son lo que hace que el agua suene a agua
+fn gota(s: &mut [f32], inicio: usize, f0: f32, dur: f32, amp: f32) {
     let len = muestras(dur);
-    let mut fase = 0.0;
+    let mut fase = 0.0f32;
     for k in 0..len {
         if inicio + k >= s.len() {
             break;
         }
         let u = k as f32 / len as f32;
-        let f = f_ini * (1.0 + 1.6 * u);
+        let f = f0 * (1.0 + 1.2 * u * u);
         fase += 2.0 * PI * f / FM;
-        s[inicio + k] += amp * fase.sin() * (1.0 - u).powi(2);
+        let env = (u / 0.08).min(1.0) * (1.0 - u).powi(3);
+        s[inicio + k] += amp * fase.sin() * env;
     }
 }
 
-// agua corriendo: ruido filtrado con variaciones lentas y burbujas.
-// "segundos" de largo; con "loop" el final se funde con el principio
-fn agua(segundos: f32, semilla: u32, densidad_burbujas: f32) -> Vec<f32> {
+// chasquido: rafaga cortisima de ruido que hace sonar un resonador
+// (crepitar de la llama, clic de un pestillo)
+fn chasquido(s: &mut [f32], inicio: usize, frec: f32, dur: f32, amp: f32, az: &mut Azar) {
+    let mut r = Resonador::nuevo(frec, frec * 0.35);
+    let len = muestras(dur);
+    for k in 0..len.max(1) * 4 {
+        if inicio + k >= s.len() {
+            break;
+        }
+        let exc = if k < len { az.sig() * (1.0 - k as f32 / len as f32) } else { 0.0 };
+        s[inicio + k] += amp * r.paso(exc) * 6.0;
+    }
+}
+
+// agua cayendo: fondo de ruido de banda + una lluvia de gotas.
+// "densidad(t)" dice cuantas gotas por segundo hay en cada momento y
+// "volumen(t)" la envolvente general
+fn agua(segundos: f32, semilla: u32, densidad: &dyn Fn(f32) -> f32, volumen: &dyn Fn(f32) -> f32) -> Vec<f32> {
     let n = muestras(segundos);
     let mut az = Azar(semilla);
-    let mut lp = PasaBajos::nuevo(2500.0);
-    let mut hp = PasaBajos::nuevo(300.0);
     let mut s = vec![0.0; n];
+
+    // fondo: el "shhh" continuo del chorro (ruido entre ~600 y ~5000 Hz)
+    let mut lp = PasaBajos::nuevo(5000.0);
+    let mut hp = PasaAltos::nuevo(600.0);
+    let mut lento = 0.0f32;
     for (i, x) in s.iter_mut().enumerate() {
         let t = i as f32 / FM;
-        let r = lp.paso(az.sig());
-        let banda = r - hp.paso(r);
-        let ondula = 0.7 + 0.3 * (2.0 * PI * 0.7 * t).sin() * (2.0 * PI * 1.9 * t).sin();
-        *x = banda * ondula;
+        // variacion lenta y aleatoria del caudal
+        lento += (az.sig() - lento) * 0.0004;
+        let r = hp.paso(lp.paso(az.sig()));
+        *x = r * 0.35 * (0.8 + 1.5 * lento) * volumen(t) * (densidad(t) / 400.0).min(1.0);
     }
-    let cantidad = (segundos * densidad_burbujas) as usize;
-    for _ in 0..cantidad {
-        let ini = (az.uniforme() * n as f32) as usize;
-        let f = 400.0 + 1100.0 * az.uniforme();
-        burbuja(&mut s, ini, f, 0.015 + 0.03 * az.uniforme(), 0.25 + 0.3 * az.uniforme());
+
+    // gotas: se reparten en el tiempo segun la densidad
+    let paso = 0.001; // se decide cada milisegundo
+    let mut t = 0.0;
+    while t < segundos {
+        let esperadas = densidad(t) * paso;
+        if az.uniforme() < esperadas {
+            let ini = (t * FM) as usize;
+            let f0 = 900.0 + 3200.0 * az.uniforme().powi(2);
+            let dur = 0.003 + 0.009 * az.uniforme();
+            // la mayoria son chiquitas y de vez en cuando una mas fuerte
+            let amp = 0.08 + 0.5 * az.uniforme().powi(4);
+            gota(&mut s, ini, f0, dur, amp * volumen(t));
+        }
+        t += paso;
     }
     s
 }
 
-fn fuente_activar() -> Vec<f32> {
-    let mut s = agua(1.6, 41, 40.0);
-    for (i, x) in s.iter_mut().enumerate() {
+// ---------------------------------------------------------------------
+// linternas
+// ---------------------------------------------------------------------
+
+// encender: se raspa el fosforo (friccion aspera y aguda), se enciende
+// con un "fshh" y la llama queda crepitando un poco
+fn linterna_encender() -> Vec<f32> {
+    let n = muestras(1.4);
+    let mut az = Azar(21);
+    let mut s = vec![0.0; n];
+
+    // 1) raspado: ruido agudo cortado en granos irregulares (las
+    //    asperezas de la lija), durante ~0.2 s
+    let mut banda = Resonador::nuevo(3200.0, 2600.0);
+    let mut grano = 0.0f32;
+    for i in 0..muestras(0.22) {
+        if az.uniforme() < 0.004 {
+            grano = 0.4 + 0.6 * az.uniforme();
+        }
+        grano *= 0.9985;
         let t = i as f32 / FM;
-        // el chorro arranca de golpe y se asienta
-        *x *= (t / 0.08).min(1.0) * (0.55 + 0.45 * (-t / 0.5).exp());
+        let env = (t / 0.02).min(1.0) * (1.0 - t / 0.22);
+        s[i] += banda.paso(az.sig()) * 1.6 * grano * env;
     }
+
+    // 2) encendido: "fshh" brillante que se abre y se apaga rapido, con
+    //    un poco de cuerpo grave debajo
+    let ini = muestras(0.2);
+    let mut hp = PasaAltos::nuevo(1500.0);
+    let mut lp = PasaBajos::nuevo(7000.0);
+    let mut cuerpo = PasaBajos::nuevo(350.0);
+    for k in 0..muestras(0.6) {
+        let t = k as f32 / FM;
+        let env = (t / 0.012).min(1.0) * (-t / 0.16).exp();
+        let r = az.sig();
+        s[ini + k] += hp.paso(lp.paso(r)) * env * 1.3 + cuerpo.paso(r) * env * 2.5;
+    }
+
+    // 3) la llama: murmullo suave y chasquidos sueltos que se van espaciando
+    let mut llama = PasaBajos::nuevo(900.0);
+    for k in 0..n - ini {
+        let t = k as f32 / FM;
+        s[ini + k] += llama.paso(az.sig()) * 0.9 * (t / 0.1).min(1.0) * (-t / 0.8).exp();
+    }
+    let mut t = 0.25;
+    while t < 1.3 {
+        chasquido(&mut s, muestras(t), 1800.0 + 2500.0 * az.uniforme(), 0.0015, 0.9 * (-(t - 0.25) / 0.6).exp(), &mut az);
+        t += 0.02 + 0.12 * az.uniforme();
+    }
+
     normalizar(&mut s, 0.7);
-    bordes(&mut s, 0.01, 0.5);
+    bordes(&mut s, 0.002, 0.25);
     s
 }
 
-fn fuente_detener() -> Vec<f32> {
-    let mut s = agua(0.9, 51, 25.0);
+// apagar: soplido corto (aire, mas agudo que grave) y el "pff" final de
+// la llama que se ahoga
+fn linterna_apagar() -> Vec<f32> {
+    let n = muestras(0.75);
+    let mut az = Azar(31);
+    let mut s = vec![0.0; n];
+    let mut aire = Resonador::nuevo(1800.0, 2200.0);
+    let mut hp = PasaAltos::nuevo(500.0);
     for (i, x) in s.iter_mut().enumerate() {
         let t = i as f32 / FM;
-        *x *= (-t / 0.3).exp();
+        // el soplido sube rapido, se sostiene un instante y se corta
+        let env = (t / 0.05).min(1.0) * if t < 0.18 { 1.0 } else { (-(t - 0.18) / 0.07).exp() };
+        *x = hp.paso(aire.paso(az.sig())) * env * 4.0;
     }
-    // ultimo gorgoteo mas grave
-    let len = s.len();
-    burbuja(&mut s, len / 3, 220.0, 0.06, 0.6);
-    normalizar(&mut s, 0.55);
-    bordes(&mut s, 0.005, 0.2);
+    // "pff": la llama se ahoga con un golpecito grave
+    let ini = muestras(0.16);
+    let mut lp = PasaBajos::nuevo(250.0);
+    for k in 0..muestras(0.25) {
+        let t = k as f32 / FM;
+        s[ini + k] += lp.paso(az.sig()) * 2.0 * (t / 0.005).min(1.0) * (-t / 0.05).exp();
+    }
+    normalizar(&mut s, 0.5);
+    bordes(&mut s, 0.005, 0.15);
     s
 }
 
-// loop del agua de la fuente: se funde el final con el principio para que
-// al repetirse no se note el corte
+// ---------------------------------------------------------------------
+// fuente
+// ---------------------------------------------------------------------
+
+// activar: el chorro arranca (la densidad de gotas sube en ~0.4 s) y
+// queda corriendo; el final se desvanece para empalmar con el loop
+fn fuente_activar() -> Vec<f32> {
+    let mut s = agua(
+        1.8,
+        41,
+        &|t| 60.0 + 540.0 * ((t / 0.4).min(1.0)),
+        &|t| (t / 0.05).min(1.0) * (1.0 + 0.5 * (-t / 0.3).exp()),
+    );
+    normalizar(&mut s, 0.65);
+    bordes(&mut s, 0.01, 0.6);
+    s
+}
+
+// detener: el chorro se va adelgazando y quedan unas gotas sueltas
+fn fuente_detener() -> Vec<f32> {
+    let mut s = agua(1.6, 51, &|t| 500.0 * (-t / 0.25).exp() + 3.0, &|t| (-t / 0.45).exp() * 0.9 + 0.1);
+    // ultimas gotas grandes y espaciadas
+    let mut az = Azar(53);
+    for (k, t) in [0.55f32, 0.8, 1.02, 1.3].iter().enumerate() {
+        gota(&mut s, muestras(*t), 700.0 + 400.0 * az.uniforme(), 0.018, 0.5 - 0.08 * k as f32);
+    }
+    normalizar(&mut s, 0.55);
+    bordes(&mut s, 0.005, 0.15);
+    s
+}
+
+// loop del agua corriendo: denso y parejo. el final se funde con el
+// principio para que al repetirse no se note el corte
 fn fuente_agua_loop() -> Vec<f32> {
     let largo = 4.0;
     let fundido = 0.4;
-    let mut s = agua(largo + fundido, 61, 22.0);
+    let mut s = agua(largo + fundido, 61, &|_| 600.0, &|_| 1.0);
     let nf = muestras(fundido);
     let n = muestras(largo);
     for k in 0..nf {
@@ -305,71 +400,103 @@ fn fuente_agua_loop() -> Vec<f32> {
     s
 }
 
-// crujido de madera: la friccion de la bisagra es una serie de pulsos
-// (se pega y se suelta) cuya frecuencia va cambiando; los pulsos excitan
-// resonadores que le dan el timbre de madera
-fn crujido(s: &mut [f32], inicio: f32, dur: f32, f_ini: f32, f_fin: f32, semilla: u32) {
+// ---------------------------------------------------------------------
+// puerta
+// ---------------------------------------------------------------------
+
+// crujido de bisagra: friccion "pega y suelta" (pulsos) a una frecuencia
+// que cambia, con pulsos que a veces fallan (tartamudeo) y amplitud muy
+// irregular. los pulsos hacen sonar varios modos de la madera
+fn crujido(s: &mut [f32], inicio: f32, dur: f32, f_ini: f32, f_fin: f32, amp: f32, semilla: u32) {
     let mut az = Azar(semilla);
-    let mut r1 = Resonador::nuevo(620.0, 90.0);
-    let mut r2 = Resonador::nuevo(1350.0, 160.0);
-    let mut r3 = Resonador::nuevo(2900.0, 400.0);
+    let mut modos = [
+        (Resonador::nuevo(480.0, 60.0), 1.0),
+        (Resonador::nuevo(930.0, 90.0), 0.8),
+        (Resonador::nuevo(1650.0, 140.0), 0.55),
+        (Resonador::nuevo(2750.0, 260.0), 0.3),
+    ];
     let ini = muestras(inicio);
     let len = muestras(dur);
-    let mut fase = 0.0;
+    let mut fase = 0.0f32;
+    let mut presion = 1.0f32;
     for k in 0..len {
         if ini + k >= s.len() {
             break;
         }
         let u = k as f32 / len as f32;
-        // la frecuencia sube y baja un poco, con temblor
-        let f = f_ini + (f_fin - f_ini) * u + 18.0 * (2.0 * PI * 3.0 * u).sin() + 6.0 * az.sig();
+        // la presion de la mano cambia de a poco: modula volumen y tono
+        presion += (az.sig() * 0.5 + 0.5 - presion) * 0.0006;
+        let f = (f_ini + (f_fin - f_ini) * u) * (0.85 + 0.3 * presion);
         fase += f / FM;
-        let pulso = if fase >= 1.0 {
+        let mut pulso = 0.0;
+        if fase >= 1.0 {
             fase -= 1.0;
-            0.6 + 0.4 * az.uniforme()
-        } else {
-            0.0
-        };
-        let env = (u / 0.1).min(1.0) * ((1.0 - u) / 0.2).min(1.0);
-        let v = r1.paso(pulso) * 1.0 + r2.paso(pulso) * 0.7 + r3.paso(pulso) * 0.25;
-        s[ini + k] += v * env;
+            // 1 de cada 6 pulsos se "saltea": da el tartamudeo del crujido
+            if az.uniforme() > 0.16 {
+                pulso = (0.3 + 0.7 * az.uniforme()) * presion;
+            }
+        }
+        let env = (u / 0.06).min(1.0) * ((1.0 - u) / 0.15).min(1.0);
+        let mut v = 0.0;
+        for (m, g) in modos.iter_mut() {
+            v += m.paso(pulso) * *g;
+        }
+        s[ini + k] += v * env * amp;
     }
 }
 
-// golpe seco de madera pesada
+// golpe de un panel de madera pesado: varios modos graves que se apagan
+// rapido, mas el ruido del impacto
 fn golpe(s: &mut [f32], inicio: f32, fuerza: f32, semilla: u32) {
     let mut az = Azar(semilla);
-    let mut lp = PasaBajos::nuevo(700.0);
+    let mut lp = PasaBajos::nuevo(1200.0);
+    let modos = [(95.0f32, 1.0f32, 0.16f32), (168.0, 0.7, 0.1), (290.0, 0.5, 0.07), (470.0, 0.35, 0.045), (760.0, 0.2, 0.03)];
     let ini = muestras(inicio);
-    for k in 0..muestras(0.45) {
+    for k in 0..muestras(0.5) {
         if ini + k >= s.len() {
             break;
         }
         let t = k as f32 / FM;
-        let tum = (2.0 * PI * 72.0 * t).sin() * (-t / 0.12).exp();
-        let madera = (2.0 * PI * 210.0 * t).sin() * (-t / 0.05).exp() * 0.5;
-        let ruido = lp.paso(az.sig()) * (-t / 0.03).exp() * 2.0;
-        s[ini + k] += (tum + madera + ruido) * fuerza;
+        let mut v = 0.0;
+        for (f, a, tau) in modos {
+            v += a * (2.0 * PI * f * t).sin() * (-t / tau).exp();
+        }
+        let impacto = lp.paso(az.sig()) * (-t / 0.012).exp() * 2.5;
+        s[ini + k] += (v + impacto) * fuerza;
     }
+}
+
+// clic metalico del pestillo
+fn pestillo(s: &mut [f32], inicio: f32, amp: f32, semilla: u32) {
+    let mut az = Azar(semilla);
+    chasquido(s, muestras(inicio), 3400.0, 0.001, amp, &mut az);
+    chasquido(s, muestras(inicio + 0.035), 2600.0, 0.001, amp * 0.6, &mut az);
 }
 
 fn puerta_abrir() -> Vec<f32> {
     let mut s = vec![0.0; muestras(2.0)];
-    crujido(&mut s, 0.05, 1.5, 95.0, 150.0, 71);
-    crujido(&mut s, 0.9, 0.55, 210.0, 120.0, 73);
-    golpe(&mut s, 1.55, 0.25, 75);
+    pestillo(&mut s, 0.02, 0.15, 71);
+    // crujido largo que sube de tono mientras la puerta gira
+    crujido(&mut s, 0.12, 1.35, 180.0, 420.0, 12.0, 73);
+    // un segundo quejido mas agudo a mitad de camino
+    crujido(&mut s, 0.7, 0.45, 520.0, 380.0, 6.0, 75);
+    // la puerta llega al tope suavemente
+    golpe(&mut s, 1.5, 0.18, 77);
     normalizar(&mut s, 0.75);
-    bordes(&mut s, 0.005, 0.2);
+    bordes(&mut s, 0.003, 0.2);
     s
 }
 
 fn puerta_cerrar() -> Vec<f32> {
     let mut s = vec![0.0; muestras(1.6)];
-    crujido(&mut s, 0.0, 0.8, 150.0, 90.0, 81);
-    golpe(&mut s, 0.85, 1.0, 83);
-    golpe(&mut s, 0.97, 0.3, 85); // rebote
+    // crujido que baja de tono mientras se cierra, mas rapido
+    crujido(&mut s, 0.0, 0.7, 400.0, 190.0, 10.0, 81);
+    // golpe seco del panel contra el marco y un pequeno rebote
+    golpe(&mut s, 0.72, 1.0, 83);
+    golpe(&mut s, 0.8, 0.25, 85);
+    pestillo(&mut s, 0.74, 0.2, 87);
     normalizar(&mut s, 0.85);
-    bordes(&mut s, 0.005, 0.15);
+    bordes(&mut s, 0.003, 0.15);
     s
 }
 

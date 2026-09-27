@@ -435,9 +435,11 @@ fn faltan(carpeta: &str, nombres: &[&str]) -> bool {
 }
 
 // genera todo lo que falte (o todo, si forzar = true): texturas, skyboxes
-// y efectos de sonido
+// y efectos de sonido. los sonidos nunca se pisan aunque se fuerce, porque
+// pueden ser grabaciones reales puestas a mano: solo se sintetizan los
+// que falten
 pub fn asegurar_assets(forzar: bool) {
-    crate::generador_sonidos::asegurar_sonidos(forzar);
+    crate::generador_sonidos::asegurar_sonidos(false);
     for nombre in ARCHIVOS {
         if !forzar && !faltan(CARPETA_TEXTURAS, &[nombre]) {
             continue;

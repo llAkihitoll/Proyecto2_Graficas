@@ -96,25 +96,36 @@ audio de raylib:
 | Interacción | Sonido |
 |---|---|
 | Campana | campanada grave y larga de templo, con el golpe del mazo de madera |
-| Linternas | chispa y llama que prende al encender; soplido al apagar |
-| Fuente | chorro que arranca al activarla, agua corriendo en loop mientras tiene agua (más fuerte cuanto más llena) y gorgoteo al detenerla |
-| Puerta | crujido de las bisagras al abrir; crujido y golpe seco al cerrar |
+| Linternas | clic del interruptor al encender y al apagar |
+| Fuente | el agua arranca al activarla, corre en loop mientras la fuente tiene agua (más fuerte cuanto más llena) y se apaga de a poco al detenerla |
+| Puerta | pestillo y crujido al abrir; arrastre y golpe al cerrar |
 
 El sonido es **espacial**: el volumen baja con la distancia entre la
 cámara y el objeto, y el paneo depende de si el objeto está a la
 izquierda o a la derecha de la pantalla. Si la computadora no tiene
 dispositivo de audio, el diorama funciona igual sin sonido.
 
-Los `.wav` se generan por síntesis (`src/generador_sonidos.rs`):
+Las linternas, la fuente y la puerta usan **grabaciones reales**
+(originales en `sonidos/`), recortadas y normalizadas en
+`assets/sounds/`:
 
-- **Campana:** parciales inarmónicos que decaen, con pares apenas
-  desafinados que producen la pulsación típica.
-- **Linternas:** ruido filtrado para la chispa y la llama.
-- **Agua:** ruido de banda con burbujas (tonos cortos que suben).
-- **Puerta:** pulsos de fricción que excitan resonadores de madera.
+- **Luz:** el archivo trae dos clics de interruptor; el primero es encender
+  y el segundo apagar.
+- **Fuente:** de 2 minutos de agua se sacaron el arranque, un loop de 6 s
+  con el final fundido con el principio (para que no se note el corte) y
+  el final apagándose.
+- **Puerta:** apertura con pestillo y crujido; cierre con arrastre y golpe.
 
-Como el diorama los carga desde archivo, se pueden reemplazar por
-grabaciones reales con el mismo nombre.
+**Créditos:** las grabaciones son de
+[Pixabay Sound Effects](https://pixabay.com/sound-effects/), bajo la
+[Pixabay Content License](https://pixabay.com/service/license-summary/)
+(uso gratuito, sin atribución obligatoria).
+
+La **campana** es sintetizada (`src/generador_sonidos.rs`): parciales
+inarmónicos que decaen, con pares apenas desafinados que producen la
+pulsación típica, más el golpe del mazo. El programa solo sintetiza los
+`.wav` que falten; para cambiar un sonido basta con reemplazar el archivo
+con el mismo nombre.
 
 ![Todo activo](capturas/06_todo_activo.png)
 
