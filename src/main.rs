@@ -12,6 +12,8 @@ use diorama_templo::escena::Escena;
 use diorama_templo::figuras::Interactivo;
 use diorama_templo::generador;
 use diorama_templo::interaccion::EstadoDiorama;
+use diorama_templo::matematica::Vec3;
+use diorama_templo::personaje::Personaje;
 use diorama_templo::render::{self, Recursos};
 use diorama_templo::skybox::Skybox;
 use diorama_templo::sonido::Sonidos;
@@ -101,6 +103,9 @@ fn main() {
     let mut estado = EstadoDiorama::default();
     let mut escena = Escena::nueva(&estado);
     let mut camara = Camara::vista_general();
+    let mut personaje = Personaje::nuevo(&escena);
+    escena.actualizar_personaje(&personaje);
+    let mut seguir = false;
 
     let mut mostrado = 0usize;
     let mut pendiente_alta = true;
@@ -116,20 +121,24 @@ fn main() {
         let ventana = (rl.get_screen_width() as f32, rl.get_screen_height() as f32);
 
         // ------------------------------------------------------------
-        // camara
+        // camara (con shift las flechas rotan la camara; sin shift
+        // mueven al personaje, mas abajo)
         // ------------------------------------------------------------
+        let shift = rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT);
         let giro = 1.4 * dt;
-        if rl.is_key_down(KeyboardKey::KEY_LEFT) {
-            camara.theta -= giro;
-        }
-        if rl.is_key_down(KeyboardKey::KEY_RIGHT) {
-            camara.theta += giro;
-        }
-        if rl.is_key_down(KeyboardKey::KEY_UP) {
-            camara.phi += giro * 0.7;
-        }
-        if rl.is_key_down(KeyboardKey::KEY_DOWN) {
-            camara.phi -= giro * 0.7;
+        if shift {
+            if rl.is_key_down(KeyboardKey::KEY_LEFT) {
+                camara.theta -= giro;
+            }
+            if rl.is_key_down(KeyboardKey::KEY_RIGHT) {
+                camara.theta += giro;
+            }
+            if rl.is_key_down(KeyboardKey::KEY_UP) {
+                camara.phi += giro * 0.7;
+            }
+            if rl.is_key_down(KeyboardKey::KEY_DOWN) {
+                camara.phi -= giro * 0.7;
+            }
         }
 
         let paso = 7.0 * dt;
@@ -238,6 +247,46 @@ fn main() {
             ayuda = !ayuda;
         }
 
+        // ------------------------------------------------------------
+        // personaje: las flechas lo mueven relativo a hacia donde mira
+        // la camara (arriba = alejarse de la camara)
+        // ------------------------------------------------------------
+        let (frente, lado) = camara.ejes_piso();
+        let mut dir = Vec3::CERO;
+        if !shift {
+            if rl.is_key_down(KeyboardKey::KEY_UP) {
+                dir += frente;
+            }
+            if rl.is_key_down(KeyboardKey::KEY_DOWN) {
+                dir += -frente;
+            }
+            if rl.is_key_down(KeyboardKey::KEY_RIGHT) {
+                dir += lado;
+            }
+            if rl.is_key_down(KeyboardKey::KEY_LEFT) {
+                dir += -lado;
+            }
+        }
+        if dir.largo() > 1e-3 {
+            dir = dir.normalizado();
+        }
+        let personaje_movido = personaje.mover(&escena, dir, dt);
+        if personaje_movido {
+            escena.actualizar_personaje(&personaje);
+        }
+        if rl.is_key_pressed(KeyboardKey::KEY_V) {
+            seguir = !seguir;
+            if seguir {
+                camara.radio = camara.radio.min(9.0);
+            }
+            estado_mensaje(&mut estado, if seguir { "La camara sigue al personaje." } else { "Camara libre." });
+        }
+        if seguir {
+            // el objetivo se acerca suave al personaje
+            let k = (6.0 * dt).min(1.0);
+            camara.objetivo = camara.objetivo + (personaje.centro() - camara.objetivo) * k;
+        }
+
         camara.limitar();
         // la camara no puede meterse dentro de los objetos: si el
         // movimiento la deja adentro de alguno, se cancela
@@ -311,7 +360,7 @@ fn main() {
         let camara_movida = camara != camara_antes;
         let nivel = if primer_frame {
             Some(0)
-        } else if camara_movida || (animando && !suave) || cambio_estado {
+        } else if camara_movida || personaje_movido || (animando && !suave) || cambio_estado {
             Some(0)
         } else if animando {
             Some(1)
@@ -396,7 +445,8 @@ fn dibujar_hud(
     // controles
     if ayuda {
         let lineas = [
-            "Flechas / arrastrar mouse: rotar camara",
+            "Flechas: mover al personaje   V: la camara lo sigue",
+            "Shift+flechas / arrastrar mouse: rotar camara",
             "Rueda o +/-: zoom      WASD: mover   Q/Z: subir/bajar",
             "Clic sobre un objeto o E (centro): interactuar",
             "B campana  L linternas  F fuente  T puerta",

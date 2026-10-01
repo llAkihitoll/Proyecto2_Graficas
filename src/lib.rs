@@ -12,6 +12,7 @@ pub mod generador_sonidos;
 pub mod interaccion;
 pub mod material;
 pub mod matematica;
+pub mod personaje;
 pub mod render;
 pub mod ruido;
 pub mod skybox;

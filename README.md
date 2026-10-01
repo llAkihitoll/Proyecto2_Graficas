@@ -59,7 +59,9 @@ cargo test --release
 
 | Acción | Tecla / mouse |
 |---|---|
-| Rotar la cámara alrededor del diorama | flechas o arrastrar con clic izquierdo |
+| Mover al personaje en miniatura | flechas (relativas a la cámara) |
+| La cámara sigue al personaje (sí/no) | `V` |
+| Rotar la cámara alrededor del diorama | `Shift` + flechas o arrastrar con clic izquierdo |
 | Zoom | rueda del mouse o `+` / `-` |
 | Mover el punto que mira la cámara | `W` `A` `S` `D` |
 | Subir / bajar el punto que mira | `Q` / `Z` |
@@ -76,6 +78,12 @@ cargo test --release
 | Mostrar/ocultar ayuda | `H` |
 
 Al pasar el mouse sobre un objeto interactivo aparece su nombre.
+
+El personaje (un peregrino con sombrero de paja) arranca en el camino de
+entrada. Sube el puente y la escalera del templo, choca con paredes,
+árboles y puertas cerradas, y no puede meterse al estanque: la altura de
+los pies y los choques se calculan con rayos contra la misma escena que
+se renderiza (ver `src/personaje.rs`).
 
 ## Interacciones
 

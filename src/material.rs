@@ -312,3 +312,11 @@ pub const LUCIERNAGA: Material = Material {
     emision: v3(1.6, 2.0, 0.5),
     ..BASE
 };
+
+// personaje en miniatura (ver personaje.rs): telas y piel lisas
+pub const TELA_KIMONO: Material = Material { albedo: v3(0.22, 0.3, 0.6), especular: 0.05, brillo: 8.0, ..BASE };
+pub const TELA_OBI: Material = Material { albedo: v3(0.9, 0.22, 0.15), ..TELA_KIMONO };
+pub const TELA_OSCURA: Material = Material { albedo: v3(0.16, 0.14, 0.14), ..TELA_KIMONO };
+pub const PIEL: Material = Material { albedo: v3(0.95, 0.76, 0.62), especular: 0.15, brillo: 16.0, ..BASE };
+pub const CABELLO: Material = Material { albedo: v3(0.07, 0.06, 0.05), especular: 0.3, brillo: 30.0, ..BASE };
+pub const PAJA: Material = Material { albedo: v3(0.88, 0.72, 0.42), especular: 0.05, brillo: 6.0, ..BASE };

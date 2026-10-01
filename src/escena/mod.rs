@@ -6,6 +6,9 @@
 //             puertas, llamas, agua de la fuente, particulas). se
 //             reconstruye cuando cambia el estado, y como son pocos
 //             objetos cuesta muy poco
+//   personaje: el personaje en miniatura que se mueve con las flechas.
+//             va aparte para que sus rayos de choque no se toquen a el
+//             mismo, y se rehace cada vez que camina
 // ademas guarda la iluminacion del momento (sol/luna, cielo, exposicion).
 
 pub mod jardin;
@@ -17,11 +20,13 @@ use crate::bvh::Bvh;
 use crate::figuras::Aabb;
 use crate::interaccion::EstadoDiorama;
 use crate::matematica::v3;
+use crate::personaje::Personaje;
 use crate::render::Luz;
 
 pub struct Escena {
     pub estatica: Bvh,
     pub dinamica: Bvh,
+    pub personaje: Bvh,
     pub luces: Vec<Luz>,
     pub luz: Iluminacion,
     pub interior: Aabb,
@@ -42,6 +47,7 @@ impl Escena {
         let mut escena = Escena {
             estatica: construir_estatica(a.estacion),
             dinamica: Bvh::construir(Vec::new()),
+            personaje: Bvh::construir(Vec::new()),
             luces: Vec::new(),
             luz: ambiente::iluminacion(a.hora, a.estacion),
             interior: templo::interior(),
@@ -68,7 +74,13 @@ impl Escena {
         self.luces = luces;
     }
 
+    pub fn actualizar_personaje(&mut self, p: &Personaje) {
+        let mut objetos = Vec::new();
+        p.crear_objetos(&mut objetos);
+        self.personaje = Bvh::construir(objetos);
+    }
+
     pub fn cantidad_objetos(&self) -> usize {
-        self.estatica.objetos.len() + self.dinamica.objetos.len()
+        self.estatica.objetos.len() + self.dinamica.objetos.len() + self.personaje.objetos.len()
     }
 }

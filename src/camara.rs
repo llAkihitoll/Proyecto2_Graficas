@@ -70,10 +70,15 @@ impl Camara {
 
     // mueve el objetivo en el plano del piso, relativo a hacia donde mira
     pub fn desplazar(&mut self, adelante: f32, derecha: f32) {
-        let (st, ct) = self.theta.sin_cos();
-        let frente = v3(-st, 0.0, -ct);
-        let lado = v3(ct, 0.0, -st);
+        let (frente, lado) = self.ejes_piso();
         self.objetivo += frente * adelante + lado * derecha;
+    }
+
+    // direcciones "hacia adelante" y "hacia la derecha" de la camara,
+    // aplastadas sobre el piso (para mover al personaje con las flechas)
+    pub fn ejes_piso(&self) -> (Vec3, Vec3) {
+        let (st, ct) = self.theta.sin_cos();
+        (v3(-st, 0.0, -ct), v3(ct, 0.0, -st))
     }
 
     pub fn vista(&self) -> Vista {

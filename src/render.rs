@@ -49,7 +49,9 @@ impl<'a> Ctx<'a> {
         let a = self.escena.estatica.intersectar(r, t_max);
         let limite = a.as_ref().map_or(t_max, |i| i.t);
         let b = self.escena.dinamica.intersectar(r, limite);
-        b.or(a)
+        let limite = b.as_ref().map_or(limite, |i| i.t);
+        let c = self.escena.personaje.intersectar(r, limite);
+        c.or(b).or(a)
     }
 
     fn transmision(&self, r: &Rayo, t_max: f32) -> f32 {
@@ -57,7 +59,11 @@ impl<'a> Ctx<'a> {
         if a <= 0.0 {
             return 0.0;
         }
-        a * self.escena.dinamica.transmision(r, t_max)
+        let b = a * self.escena.dinamica.transmision(r, t_max);
+        if b <= 0.0 {
+            return 0.0;
+        }
+        b * self.escena.personaje.transmision(r, t_max)
     }
 
     fn trazar(&self, r: &Rayo, prof: u32, peso: f32, medio: Option<Vec3>) -> Vec3 {
