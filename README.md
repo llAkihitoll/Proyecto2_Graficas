@@ -13,9 +13,7 @@ están implementados a mano.
 
 ## Video de demostración
 
-> Coloca aquí el link del video de YouTube grabado para la entrega:
-
-- **Video:** _(pendiente)_
+- **Video:** [https://youtu.be/sXeZ02gwcsU](https://youtu.be/sXeZ02gwcsU?si=0KHM-EQKb6E65T5V)
 
 ## Cómo correrlo
 
